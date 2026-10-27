@@ -321,10 +321,10 @@ export class AuthService {
     }
   }
 
-  // any verified address of the account can reset its password, which is also
-  // how an account created through a provider gets a password login
+  // any address the account can sign in with can reset its password, which is
+  // also how an account created through a provider gets a password login
   async forgot(email: string) {
-    const user = await this._userService.getUserByVerifiedEmail(email);
+    const user = await this._userService.getUserByEmail(email);
     if (!user) {
       return false;
     }
