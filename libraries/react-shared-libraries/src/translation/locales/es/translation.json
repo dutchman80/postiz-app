@@ -295,6 +295,7 @@
   "email_verified_description": "Ya puedes iniciar sesión con esta dirección de correo.",
   "email_verification_failed": "Este enlace de verificación no es válido o ha caducado",
   "email_verification_failed_description": "Solicita un nuevo correo de verificación desde tu configuración.",
+  "go_to_login": "Ir a iniciar sesión",
   "or": "O",
   "by_registering_you_agree_to_our": "Al registrarte, aceptas nuestros",
   "and": "y",

@@ -295,6 +295,7 @@
   "email_verified_description": "Du kannst dich jetzt mit dieser E-Mail-Adresse anmelden.",
   "email_verification_failed": "Dieser Bestätigungslink ist ungültig oder abgelaufen",
   "email_verification_failed_description": "Fordere in deinen Einstellungen eine neue Bestätigungs-E-Mail an.",
+  "go_to_login": "Zur Anmeldung",
   "or": "ODER",
   "by_registering_you_agree_to_our": "Mit der Registrierung stimmen Sie unseren",
   "and": "und",

@@ -194,7 +194,7 @@ const AuthenticationComponent = () => {
         </div>
       </div>
       <div className="flex flex-col gap-[16px]">
-        {(data || []).map((email) => (
+        {(Array.isArray(data) ? data : []).map((email) => (
           <div key={email.id} className="flex items-center gap-[12px]">
             <div className="flex-1 text-[14px]">{email.email}</div>
             <div className="flex-1 text-[14px] text-textItemBlur">

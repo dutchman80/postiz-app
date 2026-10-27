@@ -295,6 +295,7 @@
   "email_verified_description": "Artık bu e-posta adresiyle giriş yapabilirsiniz.",
   "email_verification_failed": "Bu doğrulama bağlantısı geçersiz veya süresi dolmuş",
   "email_verification_failed_description": "Ayarlarınızdan yeni bir doğrulama e-postası isteyin.",
+  "go_to_login": "Girişe git",
   "or": "VEYA",
   "by_registering_you_agree_to_our": "Kayıt olarak şunları kabul etmiş olursunuz:",
   "and": "ve",

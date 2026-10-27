@@ -295,6 +295,7 @@
   "email_verified_description": "现在可以使用此邮箱地址登录。",
   "email_verification_failed": "此验证链接无效或已过期",
   "email_verification_failed_description": "请在设置中重新请求验证邮件。",
+  "go_to_login": "前往登录",
   "or": "或",
   "by_registering_you_agree_to_our": "注册即表示您同意我们的",
   "and": "和",

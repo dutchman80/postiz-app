@@ -295,6 +295,7 @@
   "email_verified_description": "يمكنك الآن تسجيل الدخول بهذا العنوان.",
   "email_verification_failed": "رابط التوثيق هذا غير صالح أو منتهي الصلاحية",
   "email_verification_failed_description": "اطلب بريد توثيق جديدًا من الإعدادات.",
+  "go_to_login": "الانتقال إلى تسجيل الدخول",
   "or": "أو",
   "by_registering_you_agree_to_our": "بتسجيلك، أنت توافق على",
   "and": "و",

@@ -295,6 +295,7 @@
   "email_verified_description": "עכשיו אפשר להתחבר עם כתובת האימייל הזו.",
   "email_verification_failed": "קישור האימות אינו תקף או שפג תוקפו",
   "email_verification_failed_description": "בקשו אימייל אימות חדש מההגדרות.",
+  "go_to_login": "מעבר להתחברות",
   "or": "או",
   "by_registering_you_agree_to_our": "בהרשמתך אתה מסכים ל",
   "and": "ו",

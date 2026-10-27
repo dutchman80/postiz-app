@@ -295,6 +295,7 @@
   "email_verified_description": "Теперь вы можете войти с этим адресом электронной почты.",
   "email_verification_failed": "Эта ссылка для подтверждения недействительна или устарела",
   "email_verification_failed_description": "Запросите новое письмо для подтверждения в настройках.",
+  "go_to_login": "Перейти ко входу",
   "or": "ИЛИ",
   "by_registering_you_agree_to_our": "Регистрируясь, вы соглашаетесь с нашими",
   "and": "и",

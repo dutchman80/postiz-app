@@ -33,6 +33,26 @@ export class UsersRepository {
       throw new Error('User not found');
     }
 
+    const [currentEmails, targetEmails, currentLogins, targetLogins] =
+      await Promise.all([
+        this._userEmail.model.userEmail.findMany({
+          where: { userId: current.id },
+          select: { id: true },
+        }),
+        this._userEmail.model.userEmail.findMany({
+          where: { userId: target.id },
+          select: { id: true },
+        }),
+        this._userIdentity.model.userIdentity.findMany({
+          where: { userId: current.id },
+          select: { id: true },
+        }),
+        this._userIdentity.model.userIdentity.findMany({
+          where: { userId: target.id },
+          select: { id: true },
+        }),
+      ]);
+
     const currentCredentials = {
       email: current.email,
       password: current.password,
@@ -53,7 +73,9 @@ export class UsersRepository {
     };
 
     // (email, providerName) is unique and checked per-statement, so park the
-    // current user on a throwaway email first, then fill each freed slot
+    // current user on a throwaway email first, then fill each freed slot. The
+    // sign-in rows travel with the credentials, otherwise the login would
+    // still resolve to the account it was switched away from.
     await this._transaction.model.$transaction([
       this._user.model.user.update({
         where: { id: current.id },
@@ -66,6 +88,22 @@ export class UsersRepository {
       this._user.model.user.update({
         where: { id: current.id },
         data: targetCredentials,
+      }),
+      this._userEmail.model.userEmail.updateMany({
+        where: { id: { in: currentEmails.map((row) => row.id) } },
+        data: { userId: target.id },
+      }),
+      this._userEmail.model.userEmail.updateMany({
+        where: { id: { in: targetEmails.map((row) => row.id) } },
+        data: { userId: current.id },
+      }),
+      this._userIdentity.model.userIdentity.updateMany({
+        where: { id: { in: currentLogins.map((row) => row.id) } },
+        data: { userId: target.id },
+      }),
+      this._userIdentity.model.userIdentity.updateMany({
+        where: { id: { in: targetLogins.map((row) => row.id) } },
+        data: { userId: current.id },
       }),
     ]);
 
@@ -145,12 +183,40 @@ export class UsersRepository {
     return found.user;
   }
 
-  private canSignInWith(row: {
-    email: string;
-    verifiedAt: Date | null;
-    user: { email: string };
-  }) {
-    return !!row.verifiedAt || row.user.email.toLowerCase() === row.email;
+  // a primary address only counts for an account that finished activating, so
+  // a registration nobody confirmed cannot hold an address hostage
+  private canSignInWith(
+    row: {
+      email: string;
+      verifiedAt: Date | null;
+      user: { email: string };
+    },
+    holderActivated = true
+  ) {
+    return (
+      !!row.verifiedAt ||
+      (holderActivated && row.user.email.toLowerCase() === row.email)
+    );
+  }
+
+  private getEmailHolder(email: string) {
+    return this._userEmail.model.userEmail.findUnique({
+      where: {
+        email: email.toLowerCase(),
+      },
+      select: {
+        id: true,
+        userId: true,
+        email: true,
+        verifiedAt: true,
+        user: {
+          select: {
+            email: true,
+            activated: true,
+          },
+        },
+      },
+    });
   }
 
   // an unverified address may be taken over by whoever proves it first, unless
@@ -160,27 +226,13 @@ export class UsersRepository {
       return false;
     }
 
-    const existing = await this._userEmail.model.userEmail.findUnique({
-      where: {
-        email: email.toLowerCase(),
-      },
-      select: {
-        id: true,
-        email: true,
-        verifiedAt: true,
-        user: {
-          select: {
-            email: true,
-          },
-        },
-      },
-    });
+    const existing = await this.getEmailHolder(email);
 
     if (!existing) {
       return true;
     }
 
-    if (this.canSignInWith(existing)) {
+    if (this.canSignInWith(existing, existing.user.activated)) {
       return false;
     }
 
@@ -311,51 +363,102 @@ export class UsersRepository {
     });
   }
 
+  // the pending row of another account is left alone, the address only moves
+  // when its link is clicked (see verifyEmail), so adding it cannot be used to
+  // knock a pending address off somebody else's account
   async addEmail(userId: string, email: string) {
-    const existing = await this._userEmail.model.userEmail.findUnique({
-      where: {
-        email,
-      },
-      select: {
-        id: true,
-        userId: true,
-        email: true,
-        verifiedAt: true,
-      },
-    });
+    const existing = await this.getEmailHolder(email);
 
     if (existing?.userId === userId) {
-      return existing;
+      return {
+        id: existing.id,
+        email: existing.email,
+        verifiedAt: existing.verifiedAt,
+      };
     }
 
-    if (!(await this.claimEmail(email))) {
-      return null;
+    if (existing) {
+      return this.canSignInWith(existing, existing.user.activated)
+        ? null
+        : { id: null, email, verifiedAt: null };
     }
 
-    return this._userEmail.model.userEmail.create({
-      data: {
-        userId,
-        email,
-      },
-      select: {
-        id: true,
-        email: true,
-        verifiedAt: true,
-      },
-    });
+    try {
+      return await this._userEmail.model.userEmail.create({
+        data: {
+          userId,
+          email,
+        },
+        select: {
+          id: true,
+          email: true,
+          verifiedAt: true,
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        return null;
+      }
+
+      throw err;
+    }
   }
 
-  verifyEmail(userId: string, id: string) {
-    return this._userEmail.model.userEmail.updateMany({
-      where: {
-        id,
-        userId,
-        verifiedAt: null,
-      },
-      data: {
-        verifiedAt: new Date(),
-      },
-    });
+  async verifyEmail(userId: string, email: string) {
+    if (!(await this.getUserById(userId))) {
+      return false;
+    }
+
+    const existing = await this.getEmailHolder(email);
+
+    try {
+      if (!existing) {
+        await this._userEmail.model.userEmail.create({
+          data: {
+            userId,
+            email,
+            verifiedAt: new Date(),
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        return true;
+      }
+
+      if (
+        existing.userId !== userId &&
+        this.canSignInWith(existing, existing.user.activated)
+      ) {
+        return false;
+      }
+
+      if (existing.userId === userId && existing.verifiedAt) {
+        return true;
+      }
+
+      await this._userEmail.model.userEmail.update({
+        where: {
+          id: existing.id,
+        },
+        data: {
+          userId,
+          verifiedAt: new Date(),
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      return true;
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        return false;
+      }
+
+      throw err;
+    }
   }
 
   removeEmail(userId: string, id: string) {
@@ -446,6 +549,7 @@ export class UsersRepository {
     });
 
     const rank = { USER: 0, ADMIN: 1, SUPERADMIN: 2 };
+    let targetHasPassword = !!target.password;
     for (const source of sources) {
       const [targetOrgs, sourceOrgs] = await Promise.all([
         this._userOrg.model.userOrganization.findMany({
@@ -485,11 +589,33 @@ export class UsersRepository {
         ];
       });
 
+      // the operator merging the accounts vouches for the address the source
+      // signed in with, and the target needs some password to keep using it
+      const copyPassword = !targetHasPassword && !!source.password;
+      targetHasPassword ||= copyPassword;
+
       await this._transaction.model.$transaction([
+        this._userEmail.model.userEmail.updateMany({
+          where: {
+            userId: source.id,
+            verifiedAt: null,
+            email: source.email.toLowerCase(),
+          },
+          data: { verifiedAt: new Date() },
+        }),
         this._userEmail.model.userEmail.updateMany({
           where: { userId: source.id },
           data: { userId: targetId },
         }),
+        ...(copyPassword
+          ? [
+              this._user.model.user.update({
+                where: { id: targetId },
+                data: { password: source.password },
+                select: { id: true },
+              }),
+            ]
+          : []),
         this._userIdentity.model.userIdentity.updateMany({
           where: { userId: source.id },
           data: { userId: targetId },
@@ -509,7 +635,7 @@ export class UsersRepository {
   // their rows here, so it only touches users that still miss them and is cheap
   // to run at every start. A login already owned by another account is reported
   // instead of moved, those accounts need a merge.
-  async backfillIdentities(trustLocal: boolean) {
+  async backfillIdentities() {
     const conflicts: { userId: string; login: string; ownerId: string }[] = [];
 
     const missingIdentity = await this._user.model.user.findMany({
@@ -523,96 +649,131 @@ export class UsersRepository {
         providerName: true,
         providerId: true,
       },
+      orderBy: {
+        createdAt: 'asc',
+      },
     });
-    for (const user of missingIdentity) {
-      if (!user.providerId) {
-        continue;
-      }
-
-      const owner = await this._userIdentity.model.userIdentity.findUnique({
+    const identityUsers = missingIdentity.filter((user) => !!user.providerId);
+    const identityOwners = new Map<string, string>();
+    for (const part of this.chunks(identityUsers)) {
+      const owned = await this._userIdentity.model.userIdentity.findMany({
         where: {
-          provider_providerId: {
-            provider: user.providerName,
-            providerId: user.providerId,
-          },
+          providerId: { in: part.map((user) => user.providerId!) },
         },
-        select: { userId: true },
+        select: { userId: true, provider: true, providerId: true },
       });
-      if (owner) {
-        conflicts.push({
-          userId: user.id,
-          login: `${user.providerName}:${user.providerId}`,
-          ownerId: owner.userId,
-        });
-        continue;
+      for (const row of owned) {
+        identityOwners.set(`${row.provider}:${row.providerId}`, row.userId);
       }
-
-      await this.addIdentity(user.id, user.providerName, user.providerId);
     }
 
+    const identities: Prisma.UserIdentityCreateManyInput[] = [];
+    for (const user of identityUsers) {
+      const login = `${user.providerName}:${user.providerId}`;
+      const ownerId = identityOwners.get(login);
+      if (ownerId) {
+        conflicts.push({ userId: user.id, login, ownerId });
+        continue;
+      }
+
+      identityOwners.set(login, user.id);
+      identities.push({
+        userId: user.id,
+        provider: user.providerName,
+        providerId: user.providerId!,
+      });
+    }
+    for (const part of this.chunks(identities)) {
+      await this._userIdentity.model.userIdentity.createMany({
+        data: part,
+        skipDuplicates: true,
+      });
+    }
+
+    // local accounts sign in through their address, so they get it before a
+    // provider account that happens to share it, which signs in via its identity
+    await this.backfillEmails(true, conflicts);
+    await this.backfillEmails(false, conflicts);
+
+    return conflicts;
+  }
+
+  private async backfillEmails(
+    local: boolean,
+    conflicts: { userId: string; login: string; ownerId: string }[]
+  ) {
     const missingEmail = await this._user.model.user.findMany({
       where: {
         deletedAt: null,
+        providerName: local ? Provider.LOCAL : { not: Provider.LOCAL },
         emails: { none: {} },
       },
       select: {
         id: true,
         email: true,
         providerName: true,
-        activated: true,
         createdAt: true,
       },
       orderBy: {
         createdAt: 'asc',
       },
     });
-    for (const user of missingEmail) {
-      const email = user.email.toLowerCase();
-      if (!email || email.startsWith('deleted_')) {
-        continue;
-      }
+    // wallet and farcaster accounts keep a pseudo value in User.email
+    const users = missingEmail
+      .map((user) => ({ ...user, email: user.email.toLowerCase() }))
+      .filter((user) => user.email.includes('@'));
 
-      const owner = await this._userEmail.model.userEmail.findUnique({
-        where: { email },
-        select: { userId: true },
-      });
-      if (owner) {
-        conflicts.push({
-          userId: user.id,
-          login: email,
-          ownerId: owner.userId,
-        });
-        continue;
-      }
-
-      await this._userEmail.model.userEmail.create({
-        data: {
-          userId: user.id,
-          email,
-          verifiedAt: this.provenAt(user, trustLocal),
+    const owners = new Map<string, string>();
+    for (const part of this.chunks(users)) {
+      const owned = await this._userEmail.model.userEmail.findMany({
+        where: {
+          email: { in: part.map((user) => user.email) },
         },
-        select: { id: true },
+        select: { userId: true, email: true },
       });
+      for (const row of owned) {
+        owners.set(row.email, row.userId);
+      }
     }
 
-    return conflicts;
+    const emails: Prisma.UserEmailCreateManyInput[] = [];
+    for (const user of users) {
+      const ownerId = owners.get(user.email);
+      if (ownerId) {
+        conflicts.push({ userId: user.id, login: user.email, ownerId });
+        continue;
+      }
+
+      owners.set(user.email, user.id);
+      emails.push({
+        userId: user.id,
+        email: user.email,
+        verifiedAt: this.provenAt(user),
+      });
+    }
+    for (const part of this.chunks(emails)) {
+      await this._userEmail.model.userEmail.createMany({
+        data: part,
+        skipDuplicates: true,
+      });
+    }
+  }
+
+  private chunks<T>(list: T[], size = 500) {
+    return Array.from({ length: Math.ceil(list.length / size) }, (_, index) =>
+      list.slice(index * size, (index + 1) * size)
+    );
   }
 
   // only an address somebody proved counts as verified: Google and Apple always
-  // assert theirs, a local account proved it by activating through an email
-  // (if the instance sends emails at all), nothing else is trusted
-  private provenAt(
-    user: { providerName: Provider; activated: boolean; createdAt: Date },
-    trustLocal: boolean
-  ) {
+  // assert theirs. A local account's activated flag is no proof (instances
+  // without an email provider activate everyone), so those stay unverified and
+  // keep signing in through the primary rule until they verify from settings.
+  private provenAt(user: { providerName: Provider; createdAt: Date }) {
     if (
       user.providerName === Provider.GOOGLE ||
       user.providerName === Provider.APPLE
     ) {
-      return user.createdAt;
-    }
-
-    if (user.providerName === Provider.LOCAL && user.activated && trustLocal) {
       return user.createdAt;
     }
 

@@ -295,6 +295,7 @@
   "email_verified_description": "Vous pouvez maintenant vous connecter avec cette adresse e-mail.",
   "email_verification_failed": "Ce lien de vérification est invalide ou a expiré",
   "email_verification_failed_description": "Demandez un nouvel e-mail de vérification depuis vos paramètres.",
+  "go_to_login": "Aller à la connexion",
   "or": "OU",
   "by_registering_you_agree_to_our": "En vous inscrivant, vous acceptez nos",
   "and": "et",

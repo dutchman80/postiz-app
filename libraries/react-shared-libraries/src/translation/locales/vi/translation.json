@@ -295,6 +295,7 @@
   "email_verified_description": "Bây giờ bạn có thể đăng nhập bằng địa chỉ email này.",
   "email_verification_failed": "Liên kết xác minh này không hợp lệ hoặc đã hết hạn",
   "email_verification_failed_description": "Yêu cầu email xác minh mới trong phần cài đặt.",
+  "go_to_login": "Đến trang đăng nhập",
   "or": "HOẶC",
   "by_registering_you_agree_to_our": "Bằng việc đăng ký, bạn đồng ý với",
   "and": "và",

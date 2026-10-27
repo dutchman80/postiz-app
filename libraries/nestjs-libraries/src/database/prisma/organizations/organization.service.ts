@@ -9,13 +9,15 @@ import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import dayjs from 'dayjs';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { Organization, ShortLinkPreference, User } from '@prisma/client';
+import { UsersRepository } from '@gitroom/nestjs-libraries/database/prisma/users/users.repository';
 import { AutopostService } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.service';
 
 @Injectable()
 export class OrganizationService {
   constructor(
     private _organizationRepository: OrganizationRepository,
-    private _notificationsService: NotificationService
+    private _notificationsService: NotificationService,
+    private _usersRepository: UsersRepository
   ) {}
   async createOrgAndUser(
     body: Omit<CreateOrgUserDto, 'providerToken'> & {
@@ -28,6 +30,7 @@ export class OrganizationService {
     return this._organizationRepository.createOrgAndUser(
       body,
       this._notificationsService.hasEmailProvider(),
+      await this._usersRepository.claimEmail((body.email || '').toLowerCase()),
       ip,
       userAgent
     );
@@ -46,6 +49,7 @@ export class OrganizationService {
       body,
       invite,
       this._notificationsService.hasEmailProvider(),
+      await this._usersRepository.claimEmail((body.email || '').toLowerCase()),
       ip,
       userAgent
     );
@@ -164,9 +168,11 @@ export class OrganizationService {
       );
     }
 
-    const users = await this._organizationRepository.getUsersByEmail(
-      body.email
-    );
+    // a provider account may have no email row, so fall back to User.email
+    const found = await this._usersRepository.getUserByEmail(body.email);
+    const users = found
+      ? [found]
+      : await this._organizationRepository.getUsersByEmail(body.email);
     if (!users.length) {
       throw new HttpException('No Postiz account found for this email', 400);
     }

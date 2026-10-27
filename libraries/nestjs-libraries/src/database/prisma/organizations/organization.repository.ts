@@ -5,18 +5,20 @@ import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { CreateOrgUserDto } from '@gitroom/nestjs-libraries/dtos/auth/create.org.user.dto';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { makeSecureId } from '@gitroom/nestjs-libraries/services/make.secure.id';
-import { UsersRepository } from '@gitroom/nestjs-libraries/database/prisma/users/users.repository';
 
 @Injectable()
 export class OrganizationRepository {
   constructor(
     private _organization: PrismaRepository<'organization'>,
     private _userOrg: PrismaRepository<'userOrganization'>,
-    private _user: PrismaRepository<'user'>,
-    private _usersRepository: UsersRepository
+    private _user: PrismaRepository<'user'>
   ) {}
 
   createMaxUser(id: string, name: string, saasName: string, email: string) {
+    const userEmail = email
+      ? email.split('@').join(`+${saasName}@`)
+      : `${saasName}+` + makeId(10) + '@postiz.com';
+
     return this._organization.model.organization.create({
       select: {
         id: true,
@@ -40,13 +42,16 @@ export class OrganizationRepository {
             user: {
               create: {
                 activated: true,
-                email: email
-                  ? email.split('@').join(`+${saasName}@`)
-                  : `${saasName}+` + makeId(10) + '@postiz.com',
+                email: userEmail,
                 name: name ? `${name}###${id}` : `Unnamed User###${id}`,
                 providerName: 'LOCAL',
                 password: AuthService.hashPassword(makeSecureId(500)),
                 timezone: 0,
+                emails: {
+                  create: {
+                    email: userEmail.toLowerCase(),
+                  },
+                },
               },
             },
           },
@@ -398,9 +403,16 @@ export class OrganizationRepository {
     };
   }
 
-  async getUsersByEmail(email: string) {
-    const user = await this._usersRepository.getUserByEmail(email);
-    return user ? [user] : [];
+  getUsersByEmail(email: string) {
+    return this._user.model.user.findMany({
+      where: {
+        email: {
+          equals: email,
+          mode: 'insensitive',
+        },
+        deletedAt: null,
+      },
+    });
   }
 
   async getOrgForInvite(id: string, orgId: string) {
@@ -469,20 +481,20 @@ export class OrganizationRepository {
 
   // the sign-in address is only marked verified when it was proven: a local
   // account proves it by activating, a provider account by the provider's word.
-  // An address another account still signs in with is left out, that account
-  // keeps it and the new one signs in through its provider only.
-  private async newUserData(
+  // withEmail is false when another account still signs in with the address,
+  // that account keeps it and the new one signs in through its provider only.
+  private newUserData(
     body: Omit<CreateOrgUserDto, 'providerToken'> & {
       providerId?: string;
       emailVerified?: boolean;
     },
     hasEmail: boolean,
+    withEmail: boolean,
     ip: string,
     userAgent: string
   ) {
     const activated = body.provider !== 'LOCAL' || !hasEmail;
     const email = (body.email || '').toLowerCase();
-    const withEmail = await this._usersRepository.claimEmail(email);
 
     return {
       activated,
@@ -493,7 +505,7 @@ export class OrganizationRepository {
       timezone: 0,
       ip,
       agent: userAgent,
-      ...(withEmail
+      ...(withEmail && email.includes('@')
         ? {
             emails: {
               create: {
@@ -522,6 +534,7 @@ export class OrganizationRepository {
       emailVerified?: boolean;
     },
     hasEmail: boolean,
+    withEmail: boolean,
     ip: string,
     userAgent: string
   ) {
@@ -535,7 +548,13 @@ export class OrganizationRepository {
           create: {
             role: Role.SUPERADMIN,
             user: {
-              create: await this.newUserData(body, hasEmail, ip, userAgent),
+              create: this.newUserData(
+                body,
+                hasEmail,
+                withEmail,
+                ip,
+                userAgent
+              ),
             },
           },
         },
@@ -558,6 +577,7 @@ export class OrganizationRepository {
     },
     invite: { id: string; orgId: string; role: 'USER' | 'ADMIN' },
     hasEmail: boolean,
+    withEmail: boolean,
     ip: string,
     userAgent: string
   ) {
@@ -571,7 +591,7 @@ export class OrganizationRepository {
         },
         user: {
           create: {
-            ...(await this.newUserData(body, hasEmail, ip, userAgent)),
+            ...this.newUserData(body, hasEmail, withEmail, ip, userAgent),
             inviteId: invite.id,
           },
         },

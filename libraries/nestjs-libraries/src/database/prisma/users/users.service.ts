@@ -57,6 +57,8 @@ export class UsersService {
   }
 
   async addEmail(userId: string, email: string) {
+    this.assertEmailSending();
+
     const added = await this._usersRepository.addEmail(
       userId,
       email.toLowerCase()
@@ -69,12 +71,14 @@ export class UsersService {
       throw new Error('This email address is already on your account');
     }
 
-    await this.sendEmailVerification(userId, added);
+    await this.sendEmailVerification(userId, added.email);
 
     return { id: added.id };
   }
 
   async resendEmailVerification(userId: string, id: string) {
+    this.assertEmailSending();
+
     const email = await this._usersRepository.getEmailById(userId, id);
     if (!email) {
       throw new Error('Email address not found');
@@ -84,29 +88,28 @@ export class UsersService {
       throw new Error('Email address is already verified');
     }
 
-    await this.sendEmailVerification(userId, email);
+    await this.sendEmailVerification(userId, email.email);
   }
 
   async verifyEmail(token: string) {
     try {
       const payload = AuthService.verifyJWT(token) as {
-        id: string;
+        email: string;
         userId: string;
         expires: string;
       };
       if (
-        typeof payload.id !== 'string' ||
+        typeof payload.email !== 'string' ||
         typeof payload.userId !== 'string' ||
         dayjs(payload.expires).isBefore(dayjs())
       ) {
         return false;
       }
 
-      const { count } = await this._usersRepository.verifyEmail(
+      return await this._usersRepository.verifyEmail(
         payload.userId,
-        payload.id
+        payload.email.toLowerCase()
       );
-      return count > 0;
     } catch (err) {
       return false;
     }
@@ -128,18 +131,21 @@ export class UsersService {
     await this._usersRepository.removeEmail(userId, id);
   }
 
-  private async sendEmailVerification(
-    userId: string,
-    email: { id: string; email: string }
-  ) {
+  private assertEmailSending() {
+    if (!this._notificationService.hasEmailProvider()) {
+      throw new Error('Email sending is not configured on this instance');
+    }
+  }
+
+  private async sendEmailVerification(userId: string, email: string) {
     const token = AuthService.signJWT({
-      id: email.id,
+      email,
       userId,
       expires: dayjs().add(2, 'day').format('YYYY-MM-DD HH:mm:ss'),
     });
 
     await this._notificationService.sendEmail(
-      email.email,
+      email,
       'Verify your email address',
       `Click <a href="${process.env.FRONTEND_URL}/auth/verify-email/${token}">here</a> to add this email address to your account.<br />The link will expire in 2 days.`
     );
@@ -149,12 +155,8 @@ export class UsersService {
     return this._usersRepository.mergeUsers(targetId, sourceIds);
   }
 
-  // a local account could only have activated through an email when the
-  // instance sends them, otherwise its address was never proven
   backfillIdentities() {
-    return this._usersRepository.backfillIdentities(
-      this._notificationService.hasEmailProvider()
-    );
+    return this._usersRepository.backfillIdentities();
   }
 
   async switchUser(
