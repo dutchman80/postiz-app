@@ -99,9 +99,10 @@ async function start() {
     }
   } catch (e) {
     Logger.error(
-      'Account backfill failed, is the database schema up to date?',
+      'Account backfill failed, run "pnpm run prisma-db-push" before starting this version',
       e
     );
+    throw e;
   }
 
   const port = process.env.PORT || 3000;

@@ -22,11 +22,24 @@ export class OrganizationService {
     private _notificationsService: NotificationService,
     private _usersRepository: UsersRepository
   ) {}
-  // withEmail is false when another account still signs in with the address
+  // withEmail is false when the address is held by another account, or is
+  // pending there and this registration did not prove it. releaseId is the
+  // pending row the registration takes over, it is deleted with the create.
   private async getNewUserEmail(body: NewUserBody): Promise<NewUserEmail> {
+    const { withEmail, releaseId } = await this._usersRepository.getEmailClaim(
+      body.email,
+      !!body.emailVerified
+    );
+
+    // a local account without an email row could never sign in
+    if (body.provider === 'LOCAL' && !withEmail) {
+      throw new Error('Email already exists');
+    }
+
     return {
       hasEmail: this._notificationsService.hasEmailProvider(),
-      withEmail: await this._usersRepository.claimEmail(body.email),
+      withEmail,
+      releaseId,
     };
   }
 

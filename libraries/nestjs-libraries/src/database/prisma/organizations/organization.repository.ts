@@ -1,5 +1,13 @@
-import { PrismaRepository } from '@gitroom/nestjs-libraries/database/prisma/prisma.service';
-import { Role, ShortLinkPreference, SubscriptionTier } from '@prisma/client';
+import {
+  PrismaRepository,
+  PrismaTransaction,
+} from '@gitroom/nestjs-libraries/database/prisma/prisma.service';
+import {
+  Prisma,
+  Role,
+  ShortLinkPreference,
+  SubscriptionTier,
+} from '@prisma/client';
 import { Injectable } from '@nestjs/common';
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { CreateOrgUserDto } from '@gitroom/nestjs-libraries/dtos/auth/create.org.user.dto';
@@ -11,14 +19,20 @@ export type NewUserBody = Omit<CreateOrgUserDto, 'providerToken'> & {
   emailVerified?: boolean;
 };
 
-export type NewUserEmail = { hasEmail: boolean; withEmail: boolean };
+export type NewUserEmail = {
+  hasEmail: boolean;
+  withEmail: boolean;
+  releaseId?: string;
+};
 
 @Injectable()
 export class OrganizationRepository {
   constructor(
     private _organization: PrismaRepository<'organization'>,
     private _userOrg: PrismaRepository<'userOrganization'>,
-    private _user: PrismaRepository<'user'>
+    private _user: PrismaRepository<'user'>,
+    private _userEmail: PrismaRepository<'userEmail'>,
+    private _transaction: PrismaTransaction
   ) {}
 
   createMaxUser(id: string, name: string, saasName: string, email: string) {
@@ -490,6 +504,7 @@ export class OrganizationRepository {
   // account proves it by activating, a provider account by the provider's word.
   // withEmail is false when another account still signs in with the address,
   // that account keeps it and the new one signs in through its provider only.
+  // releaseId is the pending row of the address, deleted together with the create.
   private newUserData(
     body: NewUserBody,
     { hasEmail, withEmail }: NewUserEmail,
@@ -531,13 +546,34 @@ export class OrganizationRepository {
     };
   }
 
+  // the pending row of a proven address goes in the same transaction as the
+  // create, so a failed registration never frees the address
+  private async withRelease<T>(
+    releaseId: string | undefined,
+    create: Prisma.PrismaPromise<T>
+  ): Promise<T> {
+    if (!releaseId) {
+      return create;
+    }
+
+    const [, created] = await this._transaction.model.$transaction([
+      this._userEmail.model.userEmail.delete({
+        where: { id: releaseId },
+        select: { id: true },
+      }),
+      create,
+    ]);
+
+    return created;
+  }
+
   async createOrgAndUser(
     body: NewUserBody,
     newUserEmail: NewUserEmail,
     ip: string,
     userAgent: string
   ) {
-    return this._organization.model.organization.create({
+    const create = this._organization.model.organization.create({
       data: {
         name: body.company,
         apiKey: AuthService.fixedEncryption(makeSecureId(20)),
@@ -561,6 +597,8 @@ export class OrganizationRepository {
         },
       },
     });
+
+    return this.withRelease(newUserEmail.releaseId, create);
   }
 
   async createUserInOrg(
@@ -570,7 +608,7 @@ export class OrganizationRepository {
     ip: string,
     userAgent: string
   ) {
-    return this._userOrg.model.userOrganization.create({
+    const create = this._userOrg.model.userOrganization.create({
       data: {
         role: invite.role,
         organization: {
@@ -590,6 +628,8 @@ export class OrganizationRepository {
         user: true,
       },
     });
+
+    return this.withRelease(newUserEmail.releaseId, create);
   }
 
   getOrgByCustomerId(customerId: string) {

@@ -146,8 +146,9 @@ export class UsersRepository {
     });
   }
 
-  // a person signs in with an address they proved, or with the account's primary
-  // address, which an instance without an email provider can never prove
+  // a person signs in with an address they proved, or with the primary address
+  // of an email/password account, which an instance without an email provider
+  // can never prove
   async getUserByEmail(email: string) {
     const found = await this._userEmail.model.userEmail.findUnique({
       where: {
@@ -176,26 +177,30 @@ export class UsersRepository {
     return found.user;
   }
 
-  // a primary address only counts for an account that finished activating, so
-  // a registration nobody confirmed cannot hold an address hostage
+  // only email/password accounts sign in by address, so the unverified primary
+  // address of a provider account is contact info, not a credential. A primary
+  // address only counts for an account that finished activating, so a
+  // registration nobody confirmed cannot hold an address hostage
   private canSignInWith(
     row: {
       email: string;
       verifiedAt: Date | null;
-      user: { email: string };
+      user: { email: string; providerName: Provider };
     },
     holderActivated = true
   ) {
     return (
       !!row.verifiedAt ||
-      (holderActivated && row.user.email.toLowerCase() === row.email)
+      (holderActivated &&
+        row.user.providerName === Provider.LOCAL &&
+        row.user.email.toLowerCase() === row.email)
     );
   }
 
   private isHeld(holder: {
     email: string;
     verifiedAt: Date | null;
-    user: { email: string; activated: boolean };
+    user: { email: string; providerName: Provider; activated: boolean };
   }) {
     return this.canSignInWith(holder, holder.user.activated);
   }
@@ -213,6 +218,7 @@ export class UsersRepository {
         user: {
           select: {
             email: true,
+            providerName: true,
             activated: true,
           },
         },
@@ -220,33 +226,28 @@ export class UsersRepository {
     });
   }
 
-  // an unverified address may be taken over by whoever proves it first, unless
-  // the account holding it signs in with it
-  async claimEmail(email: string) {
+  // reads only: the row of an address that is not held is released by the
+  // registration itself, in the same transaction as the create, and only when
+  // the new account proved the address
+  async getEmailClaim(
+    email: string,
+    proven: boolean
+  ): Promise<{ withEmail: boolean; releaseId?: string }> {
     if (!email) {
-      return false;
+      return { withEmail: false };
     }
 
     const existing = await this.getEmailHolder(email);
 
     if (!existing) {
-      return true;
+      return { withEmail: true };
     }
 
-    if (this.isHeld(existing)) {
-      return false;
+    if (this.isHeld(existing) || !proven) {
+      return { withEmail: false };
     }
 
-    await this._userEmail.model.userEmail.delete({
-      where: {
-        id: existing.id,
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    return true;
+    return { withEmail: true, releaseId: existing.id };
   }
 
   getUserWithActiveSubscriptionByEmail(email: string, excludeUserId: string) {
