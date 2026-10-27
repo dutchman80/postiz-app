@@ -11,7 +11,12 @@ import { pricing } from '@gitroom/nestjs-libraries/database/prisma/subscriptions
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import dayjs from 'dayjs';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
-import { Organization, ShortLinkPreference, User } from '@prisma/client';
+import {
+  Organization,
+  Prisma,
+  ShortLinkPreference,
+  User,
+} from '@prisma/client';
 import { UsersRepository } from '@gitroom/nestjs-libraries/database/prisma/users/users.repository';
 import { AutopostService } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.service';
 
@@ -23,12 +28,12 @@ export class OrganizationService {
     private _usersRepository: UsersRepository
   ) {}
   // withEmail is false when the address is held by another account, or is
-  // pending there and this registration did not prove it. releaseId is the
+  // pending there and this registration cannot claim it. releaseId is the
   // pending row the registration takes over, it is deleted with the create.
   private async getNewUserEmail(body: NewUserBody): Promise<NewUserEmail> {
     const { withEmail, releaseId } = await this._usersRepository.getEmailClaim(
       body.email,
-      !!body.emailVerified
+      { proven: !!body.emailVerified, provider: body.provider }
     );
 
     // a local account without an email row could never sign in
@@ -43,13 +48,29 @@ export class OrganizationService {
     };
   }
 
+  // the pending row was verified or the address was taken since it was read
+  private mapEmailRace(err: unknown) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      (err.code === 'P2025' || err.code === 'P2002')
+    ) {
+      return new Error('Email already exists');
+    }
+
+    return err;
+  }
+
   async createOrgAndUser(body: NewUserBody, ip: string, userAgent: string) {
-    return this._organizationRepository.createOrgAndUser(
-      body,
-      await this.getNewUserEmail(body),
-      ip,
-      userAgent
-    );
+    try {
+      return await this._organizationRepository.createOrgAndUser(
+        body,
+        await this.getNewUserEmail(body),
+        ip,
+        userAgent
+      );
+    } catch (err) {
+      throw this.mapEmailRace(err);
+    }
   }
 
   async createUserInOrg(
@@ -58,13 +79,17 @@ export class OrganizationService {
     ip: string,
     userAgent: string
   ) {
-    return this._organizationRepository.createUserInOrg(
-      body,
-      invite,
-      await this.getNewUserEmail(body),
-      ip,
-      userAgent
-    );
+    try {
+      return await this._organizationRepository.createUserInOrg(
+        body,
+        invite,
+        await this.getNewUserEmail(body),
+        ip,
+        userAgent
+      );
+    } catch (err) {
+      throw this.mapEmailRace(err);
+    }
   }
 
   getOrgForInvite(id: string, orgId: string) {

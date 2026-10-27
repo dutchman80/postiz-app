@@ -502,9 +502,9 @@ export class OrganizationRepository {
 
   // the sign-in address is only marked verified when it was proven: a local
   // account proves it by activating, a provider account by the provider's word.
-  // withEmail is false when another account still signs in with the address,
-  // that account keeps it and the new one signs in through its provider only.
-  // releaseId is the pending row of the address, deleted together with the create.
+  // withEmail is false when another account still signs in with the address or
+  // the sign-up cannot claim it, the new account then signs in through its
+  // provider only.
   private newUserData(
     body: NewUserBody,
     { hasEmail, withEmail }: NewUserEmail,
@@ -546,8 +546,9 @@ export class OrganizationRepository {
     };
   }
 
-  // the pending row of a proven address goes in the same transaction as the
-  // create, so a failed registration never frees the address
+  // releaseId is the pending row of the address, deleted together with the
+  // create so a failed registration never frees the address. A row verified in
+  // the meantime is not deleted, which fails the whole transaction.
   private async withRelease<T>(
     releaseId: string | undefined,
     create: Prisma.PrismaPromise<T>
@@ -558,7 +559,7 @@ export class OrganizationRepository {
 
     const [, created] = await this._transaction.model.$transaction([
       this._userEmail.model.userEmail.delete({
-        where: { id: releaseId },
+        where: { id: releaseId, verifiedAt: null },
         select: { id: true },
       }),
       create,

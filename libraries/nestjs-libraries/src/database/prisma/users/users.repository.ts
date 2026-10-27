@@ -228,22 +228,23 @@ export class UsersRepository {
 
   // reads only: the row of an address that is not held is released by the
   // registration itself, in the same transaction as the create, and only when
-  // the new account proved the address
+  // the new account proved the address or is local, which proves it at activation
   async getEmailClaim(
     email: string,
-    proven: boolean
+    options: { proven: boolean; provider: Provider }
   ): Promise<{ withEmail: boolean; releaseId?: string }> {
     if (!email) {
       return { withEmail: false };
     }
 
+    const canClaim = options.proven || options.provider === Provider.LOCAL;
     const existing = await this.getEmailHolder(email);
 
     if (!existing) {
-      return { withEmail: true };
+      return { withEmail: canClaim };
     }
 
-    if (this.isHeld(existing) || !proven) {
+    if (this.isHeld(existing) || !canClaim) {
       return { withEmail: false };
     }
 
@@ -650,7 +651,8 @@ export class UsersRepository {
   // their rows here, so it only touches users that still miss them and is cheap
   // to run at every start. A login already owned by another account is reported
   // instead of moved, those accounts need a merge. Only addresses of the
-  // trusted providers, which always assert theirs, are marked verified.
+  // trusted providers, which always assert theirs, are marked verified, other
+  // providers get no address row.
   async backfillIdentities(trustedProviders: Provider[]) {
     const conflicts: { userId: string; login: string; ownerId: string }[] = [];
 
@@ -733,7 +735,9 @@ export class UsersRepository {
         (user) =>
           !user._count.emails &&
           user.email.includes('@') &&
-          !user.email.startsWith('deleted_')
+          !user.email.startsWith('deleted_') &&
+          (user.providerName === Provider.LOCAL ||
+            trustedProviders.includes(user.providerName))
       ),
       conflicts,
       {

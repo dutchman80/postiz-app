@@ -102,7 +102,8 @@ async function start() {
       'Account backfill failed, run "pnpm run prisma-db-push" before starting this version',
       e
     );
-    throw e;
+    // Sentry's unhandled-rejection handler would otherwise keep a half-started process alive
+    process.exit(1);
   }
 
   const port = process.env.PORT || 3000;
