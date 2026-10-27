@@ -528,7 +528,11 @@ export class OrganizationRepository {
             emails: {
               create: {
                 email,
-                verifiedAt: body.emailVerified ? new Date() : null,
+                // proof of an address can only come from a provider
+                verifiedAt:
+                  body.provider !== 'LOCAL' && body.emailVerified
+                    ? new Date()
+                    : null,
               },
             },
           }

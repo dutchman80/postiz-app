@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Provider, User } from '@prisma/client';
+import { Prisma, Provider, User } from '@prisma/client';
 import { CreateOrgUserDto } from '@gitroom/nestjs-libraries/dtos/auth/create.org.user.dto';
 import { LoginUserDto } from '@gitroom/nestjs-libraries/dtos/auth/login.user.dto';
 import { UsersService } from '@gitroom/nestjs-libraries/database/prisma/users/users.service';
@@ -56,7 +56,7 @@ export class AuthService {
         }
 
         const { user: created, addedOrg } = await this.createUser(
-          body,
+          { ...body, emailVerified: false },
           await this.getUsableInvite(addToOrg),
           ip,
           userAgent
@@ -156,7 +156,20 @@ export class AuthService {
     try {
       await this._userService.addIdentity(linked.id, provider, providerUser.id);
     } catch (err) {
-      // a parallel sign-in attached the same login a moment ago
+      // only a parallel sign-in attaching the same login a moment ago is fine
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        return (
+          (await this._userService.getUserByProvider(
+            providerUser.id,
+            provider
+          )) || linked
+        );
+      }
+
+      throw err;
     }
     return linked;
   }

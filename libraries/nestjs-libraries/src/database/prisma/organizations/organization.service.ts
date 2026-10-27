@@ -31,9 +31,13 @@ export class OrganizationService {
   // pending there and this registration cannot claim it. releaseId is the
   // pending row the registration takes over, it is deleted with the create.
   private async getNewUserEmail(body: NewUserBody): Promise<NewUserEmail> {
+    // proof of an address can only come from a provider, never from the request
     const { withEmail, releaseId } = await this._usersRepository.getEmailClaim(
       body.email,
-      { proven: !!body.emailVerified, provider: body.provider }
+      {
+        proven: body.provider !== 'LOCAL' && !!body.emailVerified,
+        provider: body.provider,
+      }
     );
 
     // a local account without an email row could never sign in

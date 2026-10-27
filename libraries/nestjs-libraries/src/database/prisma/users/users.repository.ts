@@ -450,20 +450,21 @@ export class UsersRepository {
         return true;
       }
 
-      await this._userEmail.model.userEmail.update({
+      // conditional on the row still being unverified and with the owner read
+      // above, so a parallel verification cannot be overwritten
+      const { count } = await this._userEmail.model.userEmail.updateMany({
         where: {
           id: existing.id,
+          userId: existing.userId,
+          verifiedAt: null,
         },
         data: {
           userId,
           verifiedAt: new Date(),
         },
-        select: {
-          id: true,
-        },
       });
 
-      return true;
+      return count > 0;
     } catch (err: any) {
       if (err?.code === 'P2002') {
         return false;
@@ -576,7 +577,9 @@ export class UsersRepository {
         }),
       ]);
 
-      // a membership the target already holds is dropped, keeping the higher role
+      // a membership the target already holds is dropped. A disabled source
+      // membership adds nothing, an enabled one re-enables a disabled target
+      // and brings its role, otherwise the higher role is kept
       const memberships = sourceOrgs.flatMap((membership) => {
         const existing = targetOrgs.find(
           (p) => p.organizationId === membership.organizationId
@@ -590,15 +593,20 @@ export class UsersRepository {
           ];
         }
 
+        const reEnable = existing.disabled && !membership.disabled;
         return [
           this._userOrg.model.userOrganization.delete({
             where: { id: membership.id },
           }),
-          ...(rank[membership.role] > rank[existing.role]
+          ...(!membership.disabled &&
+          (reEnable || rank[membership.role] > rank[existing.role])
             ? [
                 this._userOrg.model.userOrganization.update({
                   where: { id: existing.id },
-                  data: { role: membership.role },
+                  data: {
+                    role: membership.role,
+                    ...(reEnable ? { disabled: false } : {}),
+                  },
                 }),
               ]
             : []),
