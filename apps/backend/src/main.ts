@@ -19,6 +19,7 @@ import { PostValidationExceptionFilter } from '@gitroom/backend/api/routes/posts
 import { HttpExceptionFilter } from '@gitroom/nestjs-libraries/services/exception.filter';
 import { ConfigurationChecker } from '@gitroom/helpers/configuration/configuration.checker';
 import { startMcp } from '@gitroom/nestjs-libraries/chat/start.mcp';
+import { UsersService } from '@gitroom/nestjs-libraries/database/prisma/users/users.service';
 
 async function start() {
   const app = await NestFactory.create(AppModule, {
@@ -78,6 +79,23 @@ async function start() {
   app.useGlobalFilters(new HttpExceptionFilter());
 
   loadSwagger(app);
+
+  // sign-ins resolve through UserEmail / UserIdentity, so accounts created
+  // before those tables existed get their rows before the first request
+  try {
+    const conflicts = await app.get(UsersService).backfillIdentities();
+    for (const conflict of conflicts) {
+      Logger.warn(
+        `Login ${conflict.login} of user ${conflict.userId} is already owned by user ${conflict.ownerId}, merge them with "accounts:merge"`,
+        'Account backfill'
+      );
+    }
+  } catch (e) {
+    Logger.error(
+      'Account backfill failed, is the database schema up to date?',
+      e
+    );
+  }
 
   const port = process.env.PORT || 3000;
 

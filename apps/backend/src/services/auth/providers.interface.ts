@@ -3,9 +3,11 @@ import { Injectable } from '@nestjs/common';
 export abstract class AuthProviderAbstract {
   abstract generateLink(query?: any): Promise<string> | string;
   abstract getToken(code: string, redirectUri?: string): Promise<string>;
+  // emailVerified is true only when the provider itself asserts the address,
+  // it decides whether a sign-in may be linked to an existing account by email
   abstract getUser(
     providerToken: string
-  ): Promise<{ email: string; id: string }> | false;
+  ): Promise<{ email: string; id: string; emailVerified?: boolean }> | false;
   async postRegistration(
     providerToken: string,
     orgId: string

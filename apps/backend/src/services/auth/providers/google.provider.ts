@@ -58,6 +58,7 @@ export class GoogleProvider extends AuthProviderAbstract {
     return {
       id: data.id!,
       email: data.email!,
+      emailVerified: !!data.verified_email,
     };
   }
 }

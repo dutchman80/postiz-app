@@ -18,7 +18,10 @@ export class OrganizationService {
     private _notificationsService: NotificationService
   ) {}
   async createOrgAndUser(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & { providerId?: string },
+    body: Omit<CreateOrgUserDto, 'providerToken'> & {
+      providerId?: string;
+      emailVerified?: boolean;
+    },
     ip: string,
     userAgent: string
   ) {
@@ -31,7 +34,10 @@ export class OrganizationService {
   }
 
   async createUserInOrg(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & { providerId?: string },
+    body: Omit<CreateOrgUserDto, 'providerToken'> & {
+      providerId?: string;
+      emailVerified?: boolean;
+    },
     invite: { id: string; orgId: string; role: 'USER' | 'ADMIN' },
     ip: string,
     userAgent: string

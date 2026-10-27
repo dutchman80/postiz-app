@@ -5,13 +5,15 @@ import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { CreateOrgUserDto } from '@gitroom/nestjs-libraries/dtos/auth/create.org.user.dto';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { makeSecureId } from '@gitroom/nestjs-libraries/services/make.secure.id';
+import { UsersRepository } from '@gitroom/nestjs-libraries/database/prisma/users/users.repository';
 
 @Injectable()
 export class OrganizationRepository {
   constructor(
     private _organization: PrismaRepository<'organization'>,
     private _userOrg: PrismaRepository<'userOrganization'>,
-    private _user: PrismaRepository<'user'>
+    private _user: PrismaRepository<'user'>,
+    private _usersRepository: UsersRepository
   ) {}
 
   createMaxUser(id: string, name: string, saasName: string, email: string) {
@@ -396,12 +398,9 @@ export class OrganizationRepository {
     };
   }
 
-  getUsersByEmail(email: string) {
-    return this._user.model.user.findMany({
-      where: {
-        email,
-      },
-    });
+  async getUsersByEmail(email: string) {
+    const user = await this._usersRepository.getUserByEmail(email);
+    return user ? [user] : [];
   }
 
   async getOrgForInvite(id: string, orgId: string) {
@@ -468,8 +467,60 @@ export class OrganizationRepository {
     return create;
   }
 
+  // the sign-in address is only marked verified when it was proven: a local
+  // account proves it by activating, a provider account by the provider's word.
+  // An address another account still signs in with is left out, that account
+  // keeps it and the new one signs in through its provider only.
+  private async newUserData(
+    body: Omit<CreateOrgUserDto, 'providerToken'> & {
+      providerId?: string;
+      emailVerified?: boolean;
+    },
+    hasEmail: boolean,
+    ip: string,
+    userAgent: string
+  ) {
+    const activated = body.provider !== 'LOCAL' || !hasEmail;
+    const email = (body.email || '').toLowerCase();
+    const withEmail = await this._usersRepository.claimEmail(email);
+
+    return {
+      activated,
+      email: body.email,
+      password: body.password ? AuthService.hashPassword(body.password) : '',
+      providerName: body.provider,
+      providerId: body.providerId || '',
+      timezone: 0,
+      ip,
+      agent: userAgent,
+      ...(withEmail
+        ? {
+            emails: {
+              create: {
+                email,
+                verifiedAt: body.emailVerified ? new Date() : null,
+              },
+            },
+          }
+        : {}),
+      ...(body.providerId
+        ? {
+            identities: {
+              create: {
+                provider: body.provider,
+                providerId: body.providerId,
+              },
+            },
+          }
+        : {}),
+    };
+  }
+
   async createOrgAndUser(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & { providerId?: string },
+    body: Omit<CreateOrgUserDto, 'providerToken'> & {
+      providerId?: string;
+      emailVerified?: boolean;
+    },
     hasEmail: boolean,
     ip: string,
     userAgent: string
@@ -484,18 +535,7 @@ export class OrganizationRepository {
           create: {
             role: Role.SUPERADMIN,
             user: {
-              create: {
-                activated: body.provider !== 'LOCAL' || !hasEmail,
-                email: body.email,
-                password: body.password
-                  ? AuthService.hashPassword(body.password)
-                  : '',
-                providerName: body.provider,
-                providerId: body.providerId || '',
-                timezone: 0,
-                ip,
-                agent: userAgent,
-              },
+              create: await this.newUserData(body, hasEmail, ip, userAgent),
             },
           },
         },
@@ -512,7 +552,10 @@ export class OrganizationRepository {
   }
 
   async createUserInOrg(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & { providerId?: string },
+    body: Omit<CreateOrgUserDto, 'providerToken'> & {
+      providerId?: string;
+      emailVerified?: boolean;
+    },
     invite: { id: string; orgId: string; role: 'USER' | 'ADMIN' },
     hasEmail: boolean,
     ip: string,
@@ -528,16 +571,7 @@ export class OrganizationRepository {
         },
         user: {
           create: {
-            activated: body.provider !== 'LOCAL' || !hasEmail,
-            email: body.email,
-            password: body.password
-              ? AuthService.hashPassword(body.password)
-              : '',
-            providerName: body.provider,
-            providerId: body.providerId || '',
-            timezone: 0,
-            ip,
-            agent: userAgent,
+            ...(await this.newUserData(body, hasEmail, ip, userAgent)),
             inviteId: invite.id,
           },
         },

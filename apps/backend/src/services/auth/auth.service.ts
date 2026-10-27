@@ -70,7 +70,10 @@ export class AuthService {
         return obj;
       }
 
-      if (!user || !AuthChecker.comparePassword(body.password, user.password)) {
+      if (
+        !user?.password ||
+        !AuthChecker.comparePassword(body.password, user.password)
+      ) {
         throw new Error('Invalid user name or password');
       }
 
@@ -124,10 +127,46 @@ export class AuthService {
     return organization ? { ...addToOrg, name: organization.name } : null;
   }
 
+  // a login the account already knows, or a provider-verified address that a
+  // verified account already owns: the latter attaches the login to that account
+  private async findProviderUser(
+    provider: Provider,
+    providerUser: { id: string; email: string; emailVerified?: boolean }
+  ) {
+    const user = await this._userService.getUserByProvider(
+      providerUser.id,
+      provider
+    );
+    if (user) {
+      return user;
+    }
+
+    if (!providerUser.email || !providerUser.emailVerified) {
+      return null;
+    }
+
+    const linked = await this._userService.getUserByVerifiedEmail(
+      providerUser.email
+    );
+    if (!linked) {
+      return null;
+    }
+
+    try {
+      await this._userService.addIdentity(linked.id, provider, providerUser.id);
+    } catch (err) {
+      // a parallel sign-in attached the same login a moment ago
+    }
+    return linked;
+  }
+
   // a usable invite puts the new user straight into the inviting organization,
   // otherwise registration creates the user's own organization named after the company
   private async createUser(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & { providerId?: string },
+    body: Omit<CreateOrgUserDto, 'providerToken'> & {
+      providerId?: string;
+      emailVerified?: boolean;
+    },
     invite: { orgId: string; role: 'USER' | 'ADMIN'; id: string } | null,
     ip: string,
     userAgent: string
@@ -210,10 +249,7 @@ export class AuthService {
       throw new Error('Invalid provider token');
     }
 
-    const user = await this._userService.getUserByProvider(
-      providerUser.id,
-      provider
-    );
+    const user = await this.findProviderUser(provider, providerUser);
     if (user) {
       return { user, addedOrg: false as const };
     }
@@ -233,6 +269,7 @@ export class AuthService {
         password: '',
         provider,
         providerId: providerUser.id,
+        emailVerified: providerUser.emailVerified,
         invited: body.invited,
         datafast_visitor_id: body.datafast_visitor_id,
       },
@@ -286,9 +323,11 @@ export class AuthService {
     }
   }
 
+  // any verified address of the account can reset its password, which is also
+  // how an account created through a provider gets a password login
   async forgot(email: string) {
-    const user = await this._userService.getUserByEmail(email);
-    if (!user || user.providerName !== Provider.LOCAL) {
+    const user = await this._userService.getUserByVerifiedEmail(email);
+    if (!user) {
       return false;
     }
 
@@ -298,7 +337,7 @@ export class AuthService {
     });
 
     await this._emailService.sendEmailSync(
-      user.email,
+      email,
       'Reset your password',
       `You have requested to reset your password. <br />Click <a href="${process.env.FRONTEND_URL}/auth/forgot/${resetValues}">here</a> to reset your password<br />The link will expire in 20 minutes`
     );
@@ -316,6 +355,10 @@ export class AuthService {
     return this._userService.updatePassword(user.id, body.password);
   }
 
+  verifyEmail(code: string) {
+    return this._userService.verifyEmail(code);
+  }
+
   async activate(code: string, tracking: string) {
     const user = AuthChecker.verifyJWT(code) as {
       id: string;
@@ -323,8 +366,8 @@ export class AuthService {
       email: string;
     };
     if (user.id && !user.activated) {
-      const getUserAgain = await this._userService.getUserByEmail(user.email);
-      if (getUserAgain.activated) {
+      const getUserAgain = await this._userService.getUserById(user.id);
+      if (!getUserAgain || getUserAgain.activated) {
         return false;
       }
       await this._userService.activateUser(user.id);
@@ -387,10 +430,7 @@ export class AuthService {
     if (!user) {
       throw new Error('Invalid user');
     }
-    const checkExists = await this._userService.getUserByProvider(
-      user.id,
-      provider as Provider
-    );
+    const checkExists = await this.findProviderUser(provider as Provider, user);
     if (checkExists) {
       return { jwt: await this.jwt(checkExists) };
     }
