@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 
 export abstract class AuthProviderAbstract {
+  // providers that always return a provider-verified address, used to trust legacy sign-ups
+  assertsVerifiedEmail = false;
   abstract generateLink(query?: any): Promise<string> | string;
   abstract getToken(code: string, redirectUri?: string): Promise<string>;
   // emailVerified is true only when the provider itself asserts the address,

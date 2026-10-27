@@ -6,6 +6,13 @@ import { CreateOrgUserDto } from '@gitroom/nestjs-libraries/dtos/auth/create.org
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { makeSecureId } from '@gitroom/nestjs-libraries/services/make.secure.id';
 
+export type NewUserBody = Omit<CreateOrgUserDto, 'providerToken'> & {
+  providerId?: string;
+  emailVerified?: boolean;
+};
+
+export type NewUserEmail = { hasEmail: boolean; withEmail: boolean };
+
 @Injectable()
 export class OrganizationRepository {
   constructor(
@@ -484,12 +491,8 @@ export class OrganizationRepository {
   // withEmail is false when another account still signs in with the address,
   // that account keeps it and the new one signs in through its provider only.
   private newUserData(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & {
-      providerId?: string;
-      emailVerified?: boolean;
-    },
-    hasEmail: boolean,
-    withEmail: boolean,
+    body: NewUserBody,
+    { hasEmail, withEmail }: NewUserEmail,
     ip: string,
     userAgent: string
   ) {
@@ -529,12 +532,8 @@ export class OrganizationRepository {
   }
 
   async createOrgAndUser(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & {
-      providerId?: string;
-      emailVerified?: boolean;
-    },
-    hasEmail: boolean,
-    withEmail: boolean,
+    body: NewUserBody,
+    newUserEmail: NewUserEmail,
     ip: string,
     userAgent: string
   ) {
@@ -548,13 +547,7 @@ export class OrganizationRepository {
           create: {
             role: Role.SUPERADMIN,
             user: {
-              create: this.newUserData(
-                body,
-                hasEmail,
-                withEmail,
-                ip,
-                userAgent
-              ),
+              create: this.newUserData(body, newUserEmail, ip, userAgent),
             },
           },
         },
@@ -571,13 +564,9 @@ export class OrganizationRepository {
   }
 
   async createUserInOrg(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & {
-      providerId?: string;
-      emailVerified?: boolean;
-    },
+    body: NewUserBody,
     invite: { id: string; orgId: string; role: 'USER' | 'ADMIN' },
-    hasEmail: boolean,
-    withEmail: boolean,
+    newUserEmail: NewUserEmail,
     ip: string,
     userAgent: string
   ) {
@@ -591,7 +580,7 @@ export class OrganizationRepository {
         },
         user: {
           create: {
-            ...this.newUserData(body, hasEmail, withEmail, ip, userAgent),
+            ...this.newUserData(body, newUserEmail, ip, userAgent),
             inviteId: invite.id,
           },
         },

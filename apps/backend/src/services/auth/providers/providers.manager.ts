@@ -20,4 +20,18 @@ export class AuthProviderManager {
 
     return this._moduleRef.get(found.target, { strict: false });
   }
+
+  getProvidersAssertingVerifiedEmail(): string[] {
+    const metadata =
+      Reflect.getMetadata('auth-provider', AuthProviderAbstract) || [];
+
+    return metadata
+      .filter(
+        (m: any) =>
+          this._moduleRef.get<AuthProviderAbstract>(m.target, {
+            strict: false,
+          }).assertsVerifiedEmail
+      )
+      .map((m: any) => m.provider);
+  }
 }

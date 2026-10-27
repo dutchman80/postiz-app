@@ -59,21 +59,18 @@ export class UsersService {
   async addEmail(userId: string, email: string) {
     this.assertEmailSending();
 
-    const added = await this._usersRepository.addEmail(
-      userId,
-      email.toLowerCase()
-    );
+    const added = await this._usersRepository.addEmail(userId, email);
     if (!added) {
       throw new Error('This email address is already in use');
     }
 
-    if (added.verifiedAt) {
+    if (added.row?.verifiedAt) {
       throw new Error('This email address is already on your account');
     }
 
     await this.sendEmailVerification(userId, added.email);
 
-    return { id: added.id };
+    return { id: added.row?.id || null };
   }
 
   async resendEmailVerification(userId: string, id: string) {
@@ -108,7 +105,7 @@ export class UsersService {
 
       return await this._usersRepository.verifyEmail(
         payload.userId,
-        payload.email.toLowerCase()
+        payload.email
       );
     } catch (err) {
       return false;
@@ -116,15 +113,15 @@ export class UsersService {
   }
 
   async removeEmail(userId: string, id: string) {
-    const [user, email] = await Promise.all([
-      this._usersRepository.getUserById(userId),
+    const [primary, email] = await Promise.all([
+      this._usersRepository.getPrimaryEmail(userId),
       this._usersRepository.getEmailById(userId, id),
     ]);
     if (!email) {
       throw new Error('Email address not found');
     }
 
-    if (email.email === user?.email?.toLowerCase()) {
+    if (email.email === primary?.email.toLowerCase()) {
       throw new Error('The primary email address cannot be removed');
     }
 
@@ -155,8 +152,8 @@ export class UsersService {
     return this._usersRepository.mergeUsers(targetId, sourceIds);
   }
 
-  backfillIdentities() {
-    return this._usersRepository.backfillIdentities();
+  backfillIdentities(trustedProviders: Provider[]) {
+    return this._usersRepository.backfillIdentities(trustedProviders);
   }
 
   async switchUser(

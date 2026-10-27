@@ -4,6 +4,7 @@ import {
 } from '@gitroom/nestjs-libraries/database/prisma/prisma.service';
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
+import { chunk } from 'lodash';
 import { Prisma, Provider, Role, User } from '@prisma/client';
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { UserDetailDto } from '@gitroom/nestjs-libraries/dtos/users/user.details.dto';
@@ -22,36 +23,28 @@ export class UsersRepository {
   ) {}
 
   async switchUserCredentials(currentUserId: string, targetUserId: string) {
-    const current = await this._user.model.user.findUnique({
-      where: { id: currentUserId },
-    });
-    const target = await this._user.model.user.findUnique({
-      where: { id: targetUserId },
-    });
+    const [users, emails, logins] = await Promise.all([
+      this._user.model.user.findMany({
+        where: { id: { in: [currentUserId, targetUserId] } },
+      }),
+      this._userEmail.model.userEmail.findMany({
+        where: { userId: { in: [currentUserId, targetUserId] } },
+        select: { id: true, userId: true },
+      }),
+      this._userIdentity.model.userIdentity.findMany({
+        where: { userId: { in: [currentUserId, targetUserId] } },
+        select: { id: true, userId: true },
+      }),
+    ]);
+    const current = users.find((user) => user.id === currentUserId);
+    const target = users.find((user) => user.id === targetUserId);
 
     if (!current || !target) {
       throw new Error('User not found');
     }
 
-    const [currentEmails, targetEmails, currentLogins, targetLogins] =
-      await Promise.all([
-        this._userEmail.model.userEmail.findMany({
-          where: { userId: current.id },
-          select: { id: true },
-        }),
-        this._userEmail.model.userEmail.findMany({
-          where: { userId: target.id },
-          select: { id: true },
-        }),
-        this._userIdentity.model.userIdentity.findMany({
-          where: { userId: current.id },
-          select: { id: true },
-        }),
-        this._userIdentity.model.userIdentity.findMany({
-          where: { userId: target.id },
-          select: { id: true },
-        }),
-      ]);
+    const idsOf = (rows: { id: string; userId: string }[], userId: string) =>
+      rows.filter((row) => row.userId === userId).map((row) => row.id);
 
     const currentCredentials = {
       email: current.email,
@@ -90,19 +83,19 @@ export class UsersRepository {
         data: targetCredentials,
       }),
       this._userEmail.model.userEmail.updateMany({
-        where: { id: { in: currentEmails.map((row) => row.id) } },
+        where: { id: { in: idsOf(emails, current.id) } },
         data: { userId: target.id },
       }),
       this._userEmail.model.userEmail.updateMany({
-        where: { id: { in: targetEmails.map((row) => row.id) } },
+        where: { id: { in: idsOf(emails, target.id) } },
         data: { userId: current.id },
       }),
       this._userIdentity.model.userIdentity.updateMany({
-        where: { id: { in: currentLogins.map((row) => row.id) } },
+        where: { id: { in: idsOf(logins, current.id) } },
         data: { userId: target.id },
       }),
       this._userIdentity.model.userIdentity.updateMany({
-        where: { id: { in: targetLogins.map((row) => row.id) } },
+        where: { id: { in: idsOf(logins, target.id) } },
         data: { userId: current.id },
       }),
     ]);
@@ -199,6 +192,14 @@ export class UsersRepository {
     );
   }
 
+  private isHeld(holder: {
+    email: string;
+    verifiedAt: Date | null;
+    user: { email: string; activated: boolean };
+  }) {
+    return this.canSignInWith(holder, holder.user.activated);
+  }
+
   private getEmailHolder(email: string) {
     return this._userEmail.model.userEmail.findUnique({
       where: {
@@ -232,7 +233,7 @@ export class UsersRepository {
       return true;
     }
 
-    if (this.canSignInWith(existing, existing.user.activated)) {
+    if (this.isHeld(existing)) {
       return false;
     }
 
@@ -333,6 +334,13 @@ export class UsersRepository {
     });
   }
 
+  getPrimaryEmail(userId: string) {
+    return this._user.model.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { email: true },
+    });
+  }
+
   getEmails(userId: string) {
     return this._userEmail.model.userEmail.findMany({
       where: {
@@ -366,35 +374,34 @@ export class UsersRepository {
   // the pending row of another account is left alone, the address only moves
   // when its link is clicked (see verifyEmail), so adding it cannot be used to
   // knock a pending address off somebody else's account
-  async addEmail(userId: string, email: string) {
+  async addEmail(userId: string, rawEmail: string) {
+    const email = rawEmail.toLowerCase();
     const existing = await this.getEmailHolder(email);
 
     if (existing?.userId === userId) {
       return {
-        id: existing.id,
-        email: existing.email,
-        verifiedAt: existing.verifiedAt,
+        email,
+        row: { id: existing.id, verifiedAt: existing.verifiedAt },
       };
     }
 
     if (existing) {
-      return this.canSignInWith(existing, existing.user.activated)
-        ? null
-        : { id: null, email, verifiedAt: null };
+      return this.isHeld(existing) ? null : { email, row: null };
     }
 
     try {
-      return await this._userEmail.model.userEmail.create({
+      const row = await this._userEmail.model.userEmail.create({
         data: {
           userId,
           email,
         },
         select: {
           id: true,
-          email: true,
           verifiedAt: true,
         },
       });
+
+      return { email, row };
     } catch (err: any) {
       if (err?.code === 'P2002') {
         return null;
@@ -404,12 +411,18 @@ export class UsersRepository {
     }
   }
 
-  async verifyEmail(userId: string, email: string) {
-    if (!(await this.getUserById(userId))) {
+  async verifyEmail(userId: string, rawEmail: string) {
+    const email = rawEmail.toLowerCase();
+    const [user, existing] = await Promise.all([
+      this._user.model.user.findFirst({
+        where: { id: userId, deletedAt: null },
+        select: { id: true },
+      }),
+      this.getEmailHolder(email),
+    ]);
+    if (!user) {
       return false;
     }
-
-    const existing = await this.getEmailHolder(email);
 
     try {
       if (!existing) {
@@ -427,10 +440,7 @@ export class UsersRepository {
         return true;
       }
 
-      if (
-        existing.userId !== userId &&
-        this.canSignInWith(existing, existing.user.activated)
-      ) {
+      if (existing.userId !== userId && this.isHeld(existing)) {
         return false;
       }
 
@@ -548,7 +558,11 @@ export class UsersRepository {
       },
     });
 
-    const rank = { USER: 0, ADMIN: 1, SUPERADMIN: 2 };
+    const rank: Record<Role, number> = {
+      [Role.USER]: 0,
+      [Role.ADMIN]: 1,
+      [Role.SUPERADMIN]: 2,
+    };
     let targetHasPassword = !!target.password;
     for (const source of sources) {
       const [targetOrgs, sourceOrgs] = await Promise.all([
@@ -634,150 +648,165 @@ export class UsersRepository {
   // accounts created before the UserEmail / UserIdentity tables existed get
   // their rows here, so it only touches users that still miss them and is cheap
   // to run at every start. A login already owned by another account is reported
-  // instead of moved, those accounts need a merge.
-  async backfillIdentities() {
+  // instead of moved, those accounts need a merge. Only addresses of the
+  // trusted providers, which always assert theirs, are marked verified.
+  async backfillIdentities(trustedProviders: Provider[]) {
     const conflicts: { userId: string; login: string; ownerId: string }[] = [];
 
-    const missingIdentity = await this._user.model.user.findMany({
+    // wallet and farcaster accounts keep a pseudo value in User.email
+    const users = await this._user.model.user.findMany({
       where: {
         deletedAt: null,
-        providerName: { not: Provider.LOCAL },
-        identities: { none: {} },
-      },
-      select: {
-        id: true,
-        providerName: true,
-        providerId: true,
-      },
-      orderBy: {
-        createdAt: 'asc',
-      },
-    });
-    const identityUsers = missingIdentity.filter((user) => !!user.providerId);
-    const identityOwners = new Map<string, string>();
-    for (const part of this.chunks(identityUsers)) {
-      const owned = await this._userIdentity.model.userIdentity.findMany({
-        where: {
-          providerId: { in: part.map((user) => user.providerId!) },
-        },
-        select: { userId: true, provider: true, providerId: true },
-      });
-      for (const row of owned) {
-        identityOwners.set(`${row.provider}:${row.providerId}`, row.userId);
-      }
-    }
-
-    const identities: Prisma.UserIdentityCreateManyInput[] = [];
-    for (const user of identityUsers) {
-      const login = `${user.providerName}:${user.providerId}`;
-      const ownerId = identityOwners.get(login);
-      if (ownerId) {
-        conflicts.push({ userId: user.id, login, ownerId });
-        continue;
-      }
-
-      identityOwners.set(login, user.id);
-      identities.push({
-        userId: user.id,
-        provider: user.providerName,
-        providerId: user.providerId!,
-      });
-    }
-    for (const part of this.chunks(identities)) {
-      await this._userIdentity.model.userIdentity.createMany({
-        data: part,
-        skipDuplicates: true,
-      });
-    }
-
-    // local accounts sign in through their address, so they get it before a
-    // provider account that happens to share it, which signs in via its identity
-    await this.backfillEmails(true, conflicts);
-    await this.backfillEmails(false, conflicts);
-
-    return conflicts;
-  }
-
-  private async backfillEmails(
-    local: boolean,
-    conflicts: { userId: string; login: string; ownerId: string }[]
-  ) {
-    const missingEmail = await this._user.model.user.findMany({
-      where: {
-        deletedAt: null,
-        providerName: local ? Provider.LOCAL : { not: Provider.LOCAL },
-        emails: { none: {} },
+        OR: [
+          {
+            providerName: { not: Provider.LOCAL },
+            providerId: { not: null },
+            NOT: { providerId: '' },
+            identities: { none: {} },
+          },
+          {
+            email: { contains: '@' },
+            NOT: { email: { startsWith: 'deleted_' } },
+            emails: { none: {} },
+          },
+        ],
       },
       select: {
         id: true,
         email: true,
         providerName: true,
+        providerId: true,
         createdAt: true,
+        _count: { select: { identities: true, emails: true } },
       },
       orderBy: {
         createdAt: 'asc',
       },
     });
-    // wallet and farcaster accounts keep a pseudo value in User.email
-    const users = missingEmail
-      .map((user) => ({ ...user, email: user.email.toLowerCase() }))
-      .filter((user) => user.email.includes('@'));
 
+    // local accounts sign in through their address, so they get it before a
+    // provider account that happens to share it, which signs in via its identity
+    const local = (user: { providerName: Provider }) =>
+      user.providerName === Provider.LOCAL ? 0 : 1;
+    users.sort((a, b) => local(a) - local(b));
+
+    await this.createMissingRows(
+      users.filter(
+        (user) =>
+          !user._count.identities &&
+          user.providerName !== Provider.LOCAL &&
+          !!user.providerId
+      ),
+      conflicts,
+      {
+        key: (user) => `${user.providerName}:${user.providerId}`,
+        toRow: (user) => ({
+          userId: user.id,
+          provider: user.providerName,
+          providerId: user.providerId!,
+        }),
+        findOwners: async (keys) =>
+          (
+            await this._userIdentity.model.userIdentity.findMany({
+              where: {
+                providerId: {
+                  in: keys.map((k) => k.slice(k.indexOf(':') + 1)),
+                },
+              },
+              select: { userId: true, provider: true, providerId: true },
+            })
+          ).map((row) => ({
+            key: `${row.provider}:${row.providerId}`,
+            userId: row.userId,
+          })),
+        createMany: (data) =>
+          this._userIdentity.model.userIdentity.createMany({
+            data,
+            skipDuplicates: true,
+          }),
+      }
+    );
+
+    await this.createMissingRows(
+      users.filter(
+        (user) =>
+          !user._count.emails &&
+          user.email.includes('@') &&
+          !user.email.startsWith('deleted_')
+      ),
+      conflicts,
+      {
+        key: (user) => user.email.toLowerCase(),
+        toRow: (user) => ({
+          userId: user.id,
+          email: user.email.toLowerCase(),
+          verifiedAt: trustedProviders.includes(user.providerName)
+            ? user.createdAt
+            : null,
+        }),
+        findOwners: async (keys) =>
+          (
+            await this._userEmail.model.userEmail.findMany({
+              where: { email: { in: keys } },
+              select: { userId: true, email: true },
+            })
+          ).map((row) => ({ key: row.email, userId: row.userId })),
+        createMany: (data) =>
+          this._userEmail.model.userEmail.createMany({
+            data,
+            skipDuplicates: true,
+          }),
+      }
+    );
+
+    return conflicts;
+  }
+
+  // looks up who already owns the keys, reports those as conflicts (also when
+  // two users of the batch share a key) and creates the rest
+  private async createMissingRows<
+    U extends { id: string },
+    R extends { userId: string }
+  >(
+    users: U[],
+    conflicts: { userId: string; login: string; ownerId: string }[],
+    {
+      key,
+      toRow,
+      findOwners,
+      createMany,
+    }: {
+      key: (user: U) => string;
+      toRow: (user: U) => R;
+      findOwners: (
+        keys: string[]
+      ) => Promise<{ key: string; userId: string }[]>;
+      createMany: (rows: R[]) => Promise<unknown>;
+    }
+  ) {
     const owners = new Map<string, string>();
-    for (const part of this.chunks(users)) {
-      const owned = await this._userEmail.model.userEmail.findMany({
-        where: {
-          email: { in: part.map((user) => user.email) },
-        },
-        select: { userId: true, email: true },
-      });
-      for (const row of owned) {
-        owners.set(row.email, row.userId);
+    for (const part of chunk(users, 500)) {
+      for (const row of await findOwners(part.map(key))) {
+        owners.set(row.key, row.userId);
       }
     }
 
-    const emails: Prisma.UserEmailCreateManyInput[] = [];
+    const rows: R[] = [];
     for (const user of users) {
-      const ownerId = owners.get(user.email);
+      const login = key(user);
+      const ownerId = owners.get(login);
       if (ownerId) {
-        conflicts.push({ userId: user.id, login: user.email, ownerId });
+        conflicts.push({ userId: user.id, login, ownerId });
         continue;
       }
 
-      owners.set(user.email, user.id);
-      emails.push({
-        userId: user.id,
-        email: user.email,
-        verifiedAt: this.provenAt(user),
-      });
-    }
-    for (const part of this.chunks(emails)) {
-      await this._userEmail.model.userEmail.createMany({
-        data: part,
-        skipDuplicates: true,
-      });
-    }
-  }
-
-  private chunks<T>(list: T[], size = 500) {
-    return Array.from({ length: Math.ceil(list.length / size) }, (_, index) =>
-      list.slice(index * size, (index + 1) * size)
-    );
-  }
-
-  // only an address somebody proved counts as verified: Google and Apple always
-  // assert theirs. A local account's activated flag is no proof (instances
-  // without an email provider activate everyone), so those stay unverified and
-  // keep signing in through the primary rule until they verify from settings.
-  private provenAt(user: { providerName: Provider; createdAt: Date }) {
-    if (
-      user.providerName === Provider.GOOGLE ||
-      user.providerName === Provider.APPLE
-    ) {
-      return user.createdAt;
+      owners.set(login, user.id);
+      rows.push(toRow(user));
     }
 
-    return null;
+    for (const part of chunk(rows, 500)) {
+      await createMany(part);
+    }
   }
 
   updatePassword(id: string, password: string) {

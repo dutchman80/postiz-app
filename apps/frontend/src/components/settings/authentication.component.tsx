@@ -20,6 +20,29 @@ interface UserEmail {
   verifiedAt: string | null;
 }
 
+const rowButtonClass =
+  '!bg-customColor3 !h-[24px] border border-customColor21 rounded-[4px] text-[12px]';
+
+const showError = async (
+  toast: ReturnType<typeof useToaster>,
+  response: Response,
+  fallback: string
+) => {
+  const { message } = await response.json().catch(() => ({} as any));
+  toast.show(
+    (Array.isArray(message) ? message[0] : message) || fallback,
+    'warning'
+  );
+};
+
+const showVerificationSent = (
+  toast: ReturnType<typeof useToaster>,
+  t: ReturnType<typeof useT>
+) =>
+  toast.show(
+    t('verification_email_sent', 'Verification email sent, check your inbox')
+  );
+
 export const useEmails = () => {
   const fetch = useFetch();
 
@@ -57,22 +80,16 @@ export const AddEmail = ({ onAdded }: { onAdded: () => Promise<any> }) => {
         body: JSON.stringify(values),
       });
       if (!response.ok) {
-        const { message } = await response.json().catch(() => ({} as any));
-        toast.show(
-          (Array.isArray(message) ? message[0] : message) ||
-            t('could_not_add_email', 'Could not add the email address'),
-          'warning'
+        await showError(
+          toast,
+          response,
+          t('could_not_add_email', 'Could not add the email address')
         );
         return;
       }
       await onAdded();
       modals.closeAll();
-      toast.show(
-        t(
-          'verification_email_sent',
-          'Verification email sent, check your inbox'
-        )
-      );
+      showVerificationSent(toast, t);
     },
     [onAdded, t]
   );
@@ -117,17 +134,6 @@ const AuthenticationComponent = () => {
     });
   }, [t, mutate]);
 
-  const showError = useCallback(
-    async (response: Response, fallback: string) => {
-      const { message } = await response.json().catch(() => ({} as any));
-      toast.show(
-        (Array.isArray(message) ? message[0] : message) || fallback,
-        'warning'
-      );
-    },
-    []
-  );
-
   const resend = useCallback(
     (email: UserEmail) => async () => {
       const response = await fetch(`/user/emails/${email.id}/resend`, {
@@ -135,6 +141,7 @@ const AuthenticationComponent = () => {
       });
       if (!response.ok) {
         await showError(
+          toast,
           response,
           t(
             'could_not_send_verification',
@@ -143,12 +150,7 @@ const AuthenticationComponent = () => {
         );
         return;
       }
-      toast.show(
-        t(
-          'verification_email_sent',
-          'Verification email sent, check your inbox'
-        )
-      );
+      showVerificationSent(toast, t);
     },
     [t]
   );
@@ -170,6 +172,7 @@ const AuthenticationComponent = () => {
       });
       if (!response.ok) {
         await showError(
+          toast,
           response,
           t('could_not_remove_email', 'Could not remove the email address')
         );
@@ -207,7 +210,7 @@ const AuthenticationComponent = () => {
             <div className="flex-1 flex justify-end gap-[8px]">
               {!email.verifiedAt && (
                 <Button
-                  className="!bg-customColor3 !h-[24px] border border-customColor21 rounded-[4px] text-[12px]"
+                  className={rowButtonClass}
                   onClick={resend(email)}
                   secondary={true}
                 >
@@ -216,7 +219,7 @@ const AuthenticationComponent = () => {
               )}
               {email.email !== primary && (
                 <Button
-                  className="!bg-customColor3 !h-[24px] border border-customColor21 rounded-[4px] text-[12px]"
+                  className={rowButtonClass}
                   onClick={remove(email)}
                   secondary={true}
                 >

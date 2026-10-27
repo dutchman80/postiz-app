@@ -1,6 +1,9 @@
-import { CreateOrgUserDto } from '@gitroom/nestjs-libraries/dtos/auth/create.org.user.dto';
 import { HttpException, Injectable } from '@nestjs/common';
-import { OrganizationRepository } from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.repository';
+import {
+  NewUserBody,
+  NewUserEmail,
+  OrganizationRepository,
+} from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.repository';
 import { NotificationService } from '@gitroom/nestjs-libraries/database/prisma/notifications/notification.service';
 import { AddTeamMemberDto } from '@gitroom/nestjs-libraries/dtos/settings/add.team.member.dto';
 import { AdminAddTeamMemberDto } from '@gitroom/nestjs-libraries/dtos/settings/admin.add.team.member.dto';
@@ -19,28 +22,25 @@ export class OrganizationService {
     private _notificationsService: NotificationService,
     private _usersRepository: UsersRepository
   ) {}
-  async createOrgAndUser(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & {
-      providerId?: string;
-      emailVerified?: boolean;
-    },
-    ip: string,
-    userAgent: string
-  ) {
+  // withEmail is false when another account still signs in with the address
+  private async getNewUserEmail(body: NewUserBody): Promise<NewUserEmail> {
+    return {
+      hasEmail: this._notificationsService.hasEmailProvider(),
+      withEmail: await this._usersRepository.claimEmail(body.email),
+    };
+  }
+
+  async createOrgAndUser(body: NewUserBody, ip: string, userAgent: string) {
     return this._organizationRepository.createOrgAndUser(
       body,
-      this._notificationsService.hasEmailProvider(),
-      await this._usersRepository.claimEmail((body.email || '').toLowerCase()),
+      await this.getNewUserEmail(body),
       ip,
       userAgent
     );
   }
 
   async createUserInOrg(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & {
-      providerId?: string;
-      emailVerified?: boolean;
-    },
+    body: NewUserBody,
     invite: { id: string; orgId: string; role: 'USER' | 'ADMIN' },
     ip: string,
     userAgent: string
@@ -48,8 +48,7 @@ export class OrganizationService {
     return this._organizationRepository.createUserInOrg(
       body,
       invite,
-      this._notificationsService.hasEmailProvider(),
-      await this._usersRepository.claimEmail((body.email || '').toLowerCase()),
+      await this.getNewUserEmail(body),
       ip,
       userAgent
     );

@@ -4,6 +4,7 @@ import { CreateOrgUserDto } from '@gitroom/nestjs-libraries/dtos/auth/create.org
 import { LoginUserDto } from '@gitroom/nestjs-libraries/dtos/auth/login.user.dto';
 import { UsersService } from '@gitroom/nestjs-libraries/database/prisma/users/users.service';
 import { OrganizationService } from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.service';
+import { NewUserBody } from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.repository';
 import { AuthService as AuthChecker } from '@gitroom/helpers/auth/auth.service';
 import { AuthProviderManager } from '@gitroom/backend/services/auth/providers/providers.manager';
 import dayjs from 'dayjs';
@@ -163,10 +164,7 @@ export class AuthService {
   // a usable invite puts the new user straight into the inviting organization,
   // otherwise registration creates the user's own organization named after the company
   private async createUser(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & {
-      providerId?: string;
-      emailVerified?: boolean;
-    },
+    body: NewUserBody,
     invite: { orgId: string; role: 'USER' | 'ADMIN'; id: string } | null,
     ip: string,
     userAgent: string

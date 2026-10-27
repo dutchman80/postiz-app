@@ -17,6 +17,8 @@ const makeClient = (redirectUri: string) =>
 
 @AuthProvider({ provider: 'GOOGLE' })
 export class GoogleProvider extends AuthProviderAbstract {
+  assertsVerifiedEmail = true;
+
   generateLink(query?: { redirect_uri?: string; state?: string }) {
     const redirectUri = query?.redirect_uri || defaultRedirect();
     return makeClient(redirectUri).generateAuthUrl({

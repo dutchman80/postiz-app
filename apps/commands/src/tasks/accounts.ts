@@ -7,22 +7,6 @@ export class AccountsTask {
   constructor(private _usersService: UsersService) {}
 
   @Command({
-    command: 'accounts:backfill-identities',
-    describe:
-      'Create the UserEmail / UserIdentity rows for users registered before those tables existed',
-  })
-  async backfill() {
-    const conflicts = await this._usersService.backfillIdentities();
-    for (const conflict of conflicts) {
-      console.log(
-        `Skipped ${conflict.login} for user ${conflict.userId}: already owned by user ${conflict.ownerId}, merge them with accounts:merge`
-      );
-    }
-    console.log(`Done, ${conflicts.length} conflict(s)`);
-    return true;
-  }
-
-  @Command({
     command: 'accounts:merge <target> <sources..>',
     describe:
       'Move the sign-in emails, logins and memberships of the source users onto the target user and retire the sources',
