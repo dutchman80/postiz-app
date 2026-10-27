@@ -16,5 +16,8 @@
       "Bash(vi .env)",
       "Bash(vim .env)"
     ]
+  },
+  "enabledPlugins": {
+    "cloudflare@cloudflare": true
   }
 }
