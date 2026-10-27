@@ -47,6 +47,8 @@ const clientSecret = () => {
 
 @AuthProvider({ provider: 'APPLE' })
 export class AppleProvider extends AuthProviderAbstract {
+  assertsVerifiedEmail = true;
+
   generateLink(query?: { redirect_uri?: string; state?: string }) {
     const { clientId } = getConfig();
     const url = new URL('https://appleid.apple.com/auth/authorize');
@@ -132,11 +134,17 @@ export class AppleProvider extends AuthProviderAbstract {
         audience,
         issuer: 'https://appleid.apple.com',
       }
-    ) as unknown as { sub: string; email: string };
+    ) as unknown as {
+      sub: string;
+      email: string;
+      email_verified?: boolean | string;
+    };
 
     return {
       id: payload.sub,
       email: payload.email,
+      emailVerified:
+        payload.email_verified === true || payload.email_verified === 'true',
     };
   }
 }

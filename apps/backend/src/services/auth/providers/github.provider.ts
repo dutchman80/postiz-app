@@ -35,7 +35,9 @@ export class GithubProvider extends AuthProviderAbstract {
     return access_token;
   }
 
-  async getUser(access_token: string): Promise<{ email: string; id: string }> {
+  async getUser(
+    access_token: string
+  ): Promise<{ email: string; id: string; emailVerified: boolean }> {
     const data = await (
       await fetch('https://api.github.com/user', {
         headers: {
@@ -44,7 +46,7 @@ export class GithubProvider extends AuthProviderAbstract {
       })
     ).json();
 
-    const [{ email }] = await (
+    const [{ email, verified }] = await (
       await fetch('https://api.github.com/user/emails', {
         headers: {
           Authorization: `token ${access_token}`,
@@ -55,6 +57,7 @@ export class GithubProvider extends AuthProviderAbstract {
     return {
       email: email,
       id: String(data.id),
+      emailVerified: !!verified,
     };
   }
 }

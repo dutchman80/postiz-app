@@ -19,6 +19,9 @@ import { PostValidationExceptionFilter } from '@gitroom/backend/api/routes/posts
 import { HttpExceptionFilter } from '@gitroom/nestjs-libraries/services/exception.filter';
 import { ConfigurationChecker } from '@gitroom/helpers/configuration/configuration.checker';
 import { startMcp } from '@gitroom/nestjs-libraries/chat/start.mcp';
+import { AuthProviderManager } from '@gitroom/backend/services/auth/providers/providers.manager';
+import { Provider } from '@prisma/client';
+import { UsersService } from '@gitroom/nestjs-libraries/database/prisma/users/users.service';
 
 async function start() {
   const app = await NestFactory.create(AppModule, {
@@ -78,6 +81,30 @@ async function start() {
   app.useGlobalFilters(new HttpExceptionFilter());
 
   loadSwagger(app);
+
+  // legacy accounts get their sign-in rows before the first request
+  try {
+    const conflicts = await app
+      .get(UsersService)
+      .backfillIdentities(
+        app
+          .get(AuthProviderManager)
+          .getProvidersAssertingVerifiedEmail() as Provider[]
+      );
+    for (const conflict of conflicts) {
+      Logger.warn(
+        `Login ${conflict.login} of user ${conflict.userId} is already owned by user ${conflict.ownerId}, merge them with "accounts:merge"`,
+        'Account backfill'
+      );
+    }
+  } catch (e) {
+    Logger.error(
+      'Account backfill failed, run "pnpm run prisma-db-push" before starting this version',
+      e
+    );
+    // Sentry's unhandled-rejection handler would otherwise keep a half-started process alive
+    process.exit(1);
+  }
 
   const port = process.env.PORT || 3000;
 

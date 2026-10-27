@@ -1,6 +1,9 @@
-import { CreateOrgUserDto } from '@gitroom/nestjs-libraries/dtos/auth/create.org.user.dto';
 import { HttpException, Injectable } from '@nestjs/common';
-import { OrganizationRepository } from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.repository';
+import {
+  NewUserBody,
+  NewUserEmail,
+  OrganizationRepository,
+} from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.repository';
 import { NotificationService } from '@gitroom/nestjs-libraries/database/prisma/notifications/notification.service';
 import { AddTeamMemberDto } from '@gitroom/nestjs-libraries/dtos/settings/add.team.member.dto';
 import { AdminAddTeamMemberDto } from '@gitroom/nestjs-libraries/dtos/settings/admin.add.team.member.dto';
@@ -8,41 +11,89 @@ import { pricing } from '@gitroom/nestjs-libraries/database/prisma/subscriptions
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import dayjs from 'dayjs';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
-import { Organization, ShortLinkPreference, User } from '@prisma/client';
+import {
+  Organization,
+  Prisma,
+  ShortLinkPreference,
+  User,
+} from '@prisma/client';
+import { UsersRepository } from '@gitroom/nestjs-libraries/database/prisma/users/users.repository';
 import { AutopostService } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.service';
 
 @Injectable()
 export class OrganizationService {
   constructor(
     private _organizationRepository: OrganizationRepository,
-    private _notificationsService: NotificationService
+    private _notificationsService: NotificationService,
+    private _usersRepository: UsersRepository
   ) {}
-  async createOrgAndUser(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & { providerId?: string },
-    ip: string,
-    userAgent: string
-  ) {
-    return this._organizationRepository.createOrgAndUser(
-      body,
-      this._notificationsService.hasEmailProvider(),
-      ip,
-      userAgent
+  // withEmail is false when the address is held by another account, or is
+  // pending there and this registration cannot claim it. releaseId is the
+  // pending row the registration takes over, it is deleted with the create.
+  private async getNewUserEmail(body: NewUserBody): Promise<NewUserEmail> {
+    // proof of an address can only come from a provider, never from the request
+    const { withEmail, releaseId } = await this._usersRepository.getEmailClaim(
+      body.email,
+      {
+        proven: body.provider !== 'LOCAL' && !!body.emailVerified,
+        provider: body.provider,
+      }
     );
+
+    // a local account without an email row could never sign in
+    if (body.provider === 'LOCAL' && !withEmail) {
+      throw new Error('Email already exists');
+    }
+
+    return {
+      hasEmail: this._notificationsService.hasEmailProvider(),
+      withEmail,
+      releaseId,
+    };
+  }
+
+  // the pending row was verified or the address was taken since it was read
+  private mapEmailRace(err: unknown) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      (err.code === 'P2025' || err.code === 'P2002')
+    ) {
+      return new Error('Email already exists');
+    }
+
+    return err;
+  }
+
+  async createOrgAndUser(body: NewUserBody, ip: string, userAgent: string) {
+    try {
+      return await this._organizationRepository.createOrgAndUser(
+        body,
+        await this.getNewUserEmail(body),
+        ip,
+        userAgent
+      );
+    } catch (err) {
+      throw this.mapEmailRace(err);
+    }
   }
 
   async createUserInOrg(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & { providerId?: string },
+    body: NewUserBody,
     invite: { id: string; orgId: string; role: 'USER' | 'ADMIN' },
     ip: string,
     userAgent: string
   ) {
-    return this._organizationRepository.createUserInOrg(
-      body,
-      invite,
-      this._notificationsService.hasEmailProvider(),
-      ip,
-      userAgent
-    );
+    try {
+      return await this._organizationRepository.createUserInOrg(
+        body,
+        invite,
+        await this.getNewUserEmail(body),
+        ip,
+        userAgent
+      );
+    } catch (err) {
+      throw this.mapEmailRace(err);
+    }
   }
 
   getOrgForInvite(id: string, orgId: string) {
@@ -158,9 +209,11 @@ export class OrganizationService {
       );
     }
 
-    const users = await this._organizationRepository.getUsersByEmail(
-      body.email
-    );
+    // a provider account may have no email row, so fall back to User.email
+    const found = await this._usersRepository.getUserByEmail(body.email);
+    const users = found
+      ? [found]
+      : await this._organizationRepository.getUsersByEmail(body.email);
     if (!users.length) {
       throw new HttpException('No Postiz account found for this email', 400);
     }

@@ -50,7 +50,9 @@ export async function proxy(request: NextRequest) {
     nextUrl.pathname.startsWith('/icons/') ||
     // the consent screen of MCP / OAuth clients handles signed-out visitors
     // itself (sign in and come back, or connect a self-hosted instance)
-    nextUrl.pathname.startsWith('/oauth/authorize')
+    nextUrl.pathname.startsWith('/oauth/authorize') ||
+    // the link from a "verify your email" message works signed in or out
+    nextUrl.pathname.startsWith('/auth/verify-email/')
   ) {
     return topResponse;
   }

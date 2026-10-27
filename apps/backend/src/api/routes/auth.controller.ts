@@ -20,6 +20,7 @@ import { ForgotReturnPasswordDto } from '@gitroom/nestjs-libraries/dtos/auth/for
 import { ForgotPasswordDto } from '@gitroom/nestjs-libraries/dtos/auth/forgot.password.dto';
 import { ResendActivationDto } from '@gitroom/nestjs-libraries/dtos/auth/resend-activation.dto';
 import { InviteOrgDto } from '@gitroom/nestjs-libraries/dtos/auth/invite.org.dto';
+import { VerifyEmailDto } from '@gitroom/nestjs-libraries/dtos/auth/verify.email.dto';
 import { ApiTags } from '@nestjs/swagger';
 import { getCookieUrlFromDomain } from '@gitroom/helpers/subdomain/subdomain.management';
 import { EmailService } from '@gitroom/nestjs-libraries/services/email.service';
@@ -278,6 +279,11 @@ export class AuthController {
     response.header('onboarding', 'true');
 
     return response.status(200).json({ can: true });
+  }
+
+  @Post('/verify-email')
+  async verifyEmail(@Body() body: VerifyEmailDto) {
+    return { verified: await this._authService.verifyEmail(body.code) };
   }
 
   @Post('/resend-activation')

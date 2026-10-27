@@ -1,13 +1,18 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpException,
+  Param,
   Post,
   Query,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import { ThrottlerRealIpGuard } from '@gitroom/nestjs-libraries/throttler/throttler.provider';
 import { GetUserFromRequest } from '@gitroom/nestjs-libraries/user/user.from.request';
 import { sign } from 'jsonwebtoken';
 import { Organization, User } from '@prisma/client';
@@ -26,6 +31,7 @@ import { UsersService } from '@gitroom/nestjs-libraries/database/prisma/users/us
 import { UserDetailDto } from '@gitroom/nestjs-libraries/dtos/users/user.details.dto';
 import { EmailNotificationsDto } from '@gitroom/nestjs-libraries/dtos/users/email-notifications.dto';
 import { TimezoneDto } from '@gitroom/nestjs-libraries/dtos/users/timezone.dto';
+import { AddEmailDto } from '@gitroom/nestjs-libraries/dtos/users/add.email.dto';
 import { HttpForbiddenException } from '@gitroom/nestjs-libraries/services/exception.filter';
 import { RealIP } from 'nestjs-real-ip';
 import { UserAgent } from '@gitroom/nestjs-libraries/user/user.agent';
@@ -219,6 +225,48 @@ export class UsersController {
     @Body() body: UserDetailDto
   ) {
     return this._userService.changePersonal(user.id, body);
+  }
+
+  @Get('/emails')
+  async getEmails(@GetUserFromRequest() user: User) {
+    return this._userService.getEmails(user.id);
+  }
+
+  // both send mail to an address the caller typed, so cap them per client
+  @UseGuards(ThrottlerRealIpGuard)
+  @Throttle({ default: { limit: 10, ttl: 3600000 } })
+  @Post('/emails')
+  async addEmail(@GetUserFromRequest() user: User, @Body() body: AddEmailDto) {
+    try {
+      return await this._userService.addEmail(user.id, body.email);
+    } catch (e: any) {
+      throw new HttpException(e.message, 400);
+    }
+  }
+
+  @UseGuards(ThrottlerRealIpGuard)
+  @Throttle({ default: { limit: 10, ttl: 3600000 } })
+  @Post('/emails/:id/resend')
+  async resendEmailVerification(
+    @GetUserFromRequest() user: User,
+    @Param('id') id: string
+  ) {
+    try {
+      await this._userService.resendEmailVerification(user.id, id);
+      return { success: true };
+    } catch (e: any) {
+      throw new HttpException(e.message, 400);
+    }
+  }
+
+  @Delete('/emails/:id')
+  async removeEmail(@GetUserFromRequest() user: User, @Param('id') id: string) {
+    try {
+      await this._userService.removeEmail(user.id, id);
+      return { success: true };
+    } catch (e: any) {
+      throw new HttpException(e.message, 400);
+    }
   }
 
   @Get('/email-notifications')

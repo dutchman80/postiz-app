@@ -1,20 +1,45 @@
-import { PrismaRepository } from '@gitroom/nestjs-libraries/database/prisma/prisma.service';
-import { Role, ShortLinkPreference, SubscriptionTier } from '@prisma/client';
+import {
+  PrismaRepository,
+  PrismaTransaction,
+} from '@gitroom/nestjs-libraries/database/prisma/prisma.service';
+import {
+  Prisma,
+  Role,
+  ShortLinkPreference,
+  SubscriptionTier,
+} from '@prisma/client';
 import { Injectable } from '@nestjs/common';
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { CreateOrgUserDto } from '@gitroom/nestjs-libraries/dtos/auth/create.org.user.dto';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { makeSecureId } from '@gitroom/nestjs-libraries/services/make.secure.id';
 
+export type NewUserBody = Omit<CreateOrgUserDto, 'providerToken'> & {
+  providerId?: string;
+  emailVerified?: boolean;
+};
+
+export type NewUserEmail = {
+  hasEmail: boolean;
+  withEmail: boolean;
+  releaseId?: string;
+};
+
 @Injectable()
 export class OrganizationRepository {
   constructor(
     private _organization: PrismaRepository<'organization'>,
     private _userOrg: PrismaRepository<'userOrganization'>,
-    private _user: PrismaRepository<'user'>
+    private _user: PrismaRepository<'user'>,
+    private _userEmail: PrismaRepository<'userEmail'>,
+    private _transaction: PrismaTransaction
   ) {}
 
   createMaxUser(id: string, name: string, saasName: string, email: string) {
+    const userEmail = email
+      ? email.split('@').join(`+${saasName}@`)
+      : `${saasName}+` + makeId(10) + '@postiz.com';
+
     return this._organization.model.organization.create({
       select: {
         id: true,
@@ -38,13 +63,16 @@ export class OrganizationRepository {
             user: {
               create: {
                 activated: true,
-                email: email
-                  ? email.split('@').join(`+${saasName}@`)
-                  : `${saasName}+` + makeId(10) + '@postiz.com',
+                email: userEmail,
                 name: name ? `${name}###${id}` : `Unnamed User###${id}`,
                 providerName: 'LOCAL',
                 password: AuthService.hashPassword(makeSecureId(500)),
                 timezone: 0,
+                emails: {
+                  create: {
+                    email: userEmail.toLowerCase(),
+                  },
+                },
               },
             },
           },
@@ -399,7 +427,11 @@ export class OrganizationRepository {
   getUsersByEmail(email: string) {
     return this._user.model.user.findMany({
       where: {
-        email,
+        email: {
+          equals: email,
+          mode: 'insensitive',
+        },
+        deletedAt: null,
       },
     });
   }
@@ -468,13 +500,85 @@ export class OrganizationRepository {
     return create;
   }
 
-  async createOrgAndUser(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & { providerId?: string },
-    hasEmail: boolean,
+  // the sign-in address is only marked verified when it was proven: a local
+  // account proves it by activating, a provider account by the provider's word.
+  // withEmail is false when another account still signs in with the address or
+  // the sign-up cannot claim it, the new account then signs in through its
+  // provider only.
+  private newUserData(
+    body: NewUserBody,
+    { hasEmail, withEmail }: NewUserEmail,
     ip: string,
     userAgent: string
   ) {
-    return this._organization.model.organization.create({
+    const activated = body.provider !== 'LOCAL' || !hasEmail;
+    const email = (body.email || '').toLowerCase();
+
+    return {
+      activated,
+      email: body.email,
+      password: body.password ? AuthService.hashPassword(body.password) : '',
+      providerName: body.provider,
+      providerId: body.providerId || '',
+      timezone: 0,
+      ip,
+      agent: userAgent,
+      ...(withEmail && email.includes('@')
+        ? {
+            emails: {
+              create: {
+                email,
+                // proof of an address can only come from a provider
+                verifiedAt:
+                  body.provider !== 'LOCAL' && body.emailVerified
+                    ? new Date()
+                    : null,
+              },
+            },
+          }
+        : {}),
+      ...(body.providerId
+        ? {
+            identities: {
+              create: {
+                provider: body.provider,
+                providerId: body.providerId,
+              },
+            },
+          }
+        : {}),
+    };
+  }
+
+  // releaseId is the pending row of the address, deleted together with the
+  // create so a failed registration never frees the address. A row verified in
+  // the meantime is not deleted, which fails the whole transaction.
+  private async withRelease<T>(
+    releaseId: string | undefined,
+    create: Prisma.PrismaPromise<T>
+  ): Promise<T> {
+    if (!releaseId) {
+      return create;
+    }
+
+    const [, created] = await this._transaction.model.$transaction([
+      this._userEmail.model.userEmail.delete({
+        where: { id: releaseId, verifiedAt: null },
+        select: { id: true },
+      }),
+      create,
+    ]);
+
+    return created;
+  }
+
+  async createOrgAndUser(
+    body: NewUserBody,
+    newUserEmail: NewUserEmail,
+    ip: string,
+    userAgent: string
+  ) {
+    const create = this._organization.model.organization.create({
       data: {
         name: body.company,
         apiKey: AuthService.fixedEncryption(makeSecureId(20)),
@@ -484,18 +588,7 @@ export class OrganizationRepository {
           create: {
             role: Role.SUPERADMIN,
             user: {
-              create: {
-                activated: body.provider !== 'LOCAL' || !hasEmail,
-                email: body.email,
-                password: body.password
-                  ? AuthService.hashPassword(body.password)
-                  : '',
-                providerName: body.provider,
-                providerId: body.providerId || '',
-                timezone: 0,
-                ip,
-                agent: userAgent,
-              },
+              create: this.newUserData(body, newUserEmail, ip, userAgent),
             },
           },
         },
@@ -509,16 +602,18 @@ export class OrganizationRepository {
         },
       },
     });
+
+    return this.withRelease(newUserEmail.releaseId, create);
   }
 
   async createUserInOrg(
-    body: Omit<CreateOrgUserDto, 'providerToken'> & { providerId?: string },
+    body: NewUserBody,
     invite: { id: string; orgId: string; role: 'USER' | 'ADMIN' },
-    hasEmail: boolean,
+    newUserEmail: NewUserEmail,
     ip: string,
     userAgent: string
   ) {
-    return this._userOrg.model.userOrganization.create({
+    const create = this._userOrg.model.userOrganization.create({
       data: {
         role: invite.role,
         organization: {
@@ -528,16 +623,7 @@ export class OrganizationRepository {
         },
         user: {
           create: {
-            activated: body.provider !== 'LOCAL' || !hasEmail,
-            email: body.email,
-            password: body.password
-              ? AuthService.hashPassword(body.password)
-              : '',
-            providerName: body.provider,
-            providerId: body.providerId || '',
-            timezone: 0,
-            ip,
-            agent: userAgent,
+            ...this.newUserData(body, newUserEmail, ip, userAgent),
             inviteId: invite.id,
           },
         },
@@ -547,6 +633,8 @@ export class OrganizationRepository {
         user: true,
       },
     });
+
+    return this.withRelease(newUserEmail.releaseId, create);
   }
 
   getOrgByCustomerId(customerId: string) {

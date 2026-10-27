@@ -7,6 +7,8 @@ import { TimezoneDto } from '@gitroom/nestjs-libraries/dtos/users/timezone.dto';
 import { OrganizationRepository } from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.repository';
 import { IntegrationRepository } from '@gitroom/nestjs-libraries/database/prisma/integrations/integration.repository';
 import { NotificationService } from '@gitroom/nestjs-libraries/database/prisma/notifications/notification.service';
+import { AuthService } from '@gitroom/helpers/auth/auth.service';
+import dayjs from 'dayjs';
 
 @Injectable()
 export class UsersService {
@@ -40,6 +42,120 @@ export class UsersService {
 
   getUserByProvider(providerId: string, provider: Provider) {
     return this._usersRepository.getUserByProvider(providerId, provider);
+  }
+
+  getUserByVerifiedEmail(email: string) {
+    return this._usersRepository.getUserByVerifiedEmail(email);
+  }
+
+  addIdentity(userId: string, provider: Provider, providerId: string) {
+    return this._usersRepository.addIdentity(userId, provider, providerId);
+  }
+
+  getEmails(userId: string) {
+    return this._usersRepository.getEmails(userId);
+  }
+
+  async addEmail(userId: string, email: string) {
+    this.assertEmailSending();
+
+    const added = await this._usersRepository.addEmail(userId, email);
+    if (!added) {
+      throw new Error('This email address is already in use');
+    }
+
+    if (added.row?.verifiedAt) {
+      throw new Error('This email address is already on your account');
+    }
+
+    await this.sendEmailVerification(userId, added.email);
+
+    return { id: added.row?.id || null };
+  }
+
+  async resendEmailVerification(userId: string, id: string) {
+    this.assertEmailSending();
+
+    const email = await this._usersRepository.getEmailById(userId, id);
+    if (!email) {
+      throw new Error('Email address not found');
+    }
+
+    if (email.verifiedAt) {
+      throw new Error('Email address is already verified');
+    }
+
+    await this.sendEmailVerification(userId, email.email);
+  }
+
+  async verifyEmail(token: string) {
+    try {
+      const payload = AuthService.verifyJWT(token) as {
+        email: string;
+        userId: string;
+        expires: string;
+      };
+      if (
+        typeof payload.email !== 'string' ||
+        typeof payload.userId !== 'string' ||
+        typeof payload.expires !== 'string' ||
+        !dayjs(payload.expires).isValid() ||
+        dayjs(payload.expires).isBefore(dayjs())
+      ) {
+        return false;
+      }
+
+      return await this._usersRepository.verifyEmail(
+        payload.userId,
+        payload.email
+      );
+    } catch (err) {
+      return false;
+    }
+  }
+
+  async removeEmail(userId: string, id: string) {
+    const [primary, email] = await Promise.all([
+      this._usersRepository.getPrimaryEmail(userId),
+      this._usersRepository.getEmailById(userId, id),
+    ]);
+    if (!email) {
+      throw new Error('Email address not found');
+    }
+
+    if (email.email === primary?.email.toLowerCase()) {
+      throw new Error('The primary email address cannot be removed');
+    }
+
+    await this._usersRepository.removeEmail(userId, id);
+  }
+
+  private assertEmailSending() {
+    if (!this._notificationService.hasEmailProvider()) {
+      throw new Error('Email sending is not configured on this instance');
+    }
+  }
+
+  private async sendEmailVerification(userId: string, email: string) {
+    const token = AuthService.signJWT({
+      email,
+      userId,
+      expires: dayjs().add(2, 'day').format('YYYY-MM-DD HH:mm:ss'),
+    });
+
+    await this._notificationService.sendEmail(
+      email,
+      'Verify your email address',
+      `Click <a href="${process.env.FRONTEND_URL}/auth/verify-email/${token}">here</a> to add this email address to your account.<br />The link will expire in 2 days.`
+    );
+  }
+
+  mergeUsers(targetId: string, sourceIds: string[]) {
+    return this._usersRepository.mergeUsers(targetId, sourceIds);
+  }
+
+  backfillIdentities(trustedProviders: Provider[]) {
+    return this._usersRepository.backfillIdentities(trustedProviders);
   }
 
   async switchUser(
