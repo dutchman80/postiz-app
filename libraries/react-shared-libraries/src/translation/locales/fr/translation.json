@@ -276,6 +276,7 @@
   "add_an_autopost": "Ajouter une publication automatique",
   "post_content": "Contenu de la publication",
   "sign_up": "S'inscrire",
+  "you_are_joining": "Vous rejoignez {{name}}",
   "or": "OU",
   "by_registering_you_agree_to_our": "En vous inscrivant, vous acceptez nos",
   "and": "et",

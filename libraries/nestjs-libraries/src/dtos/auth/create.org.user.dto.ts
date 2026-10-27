@@ -1,6 +1,8 @@
 import {
+  IsBoolean,
   IsDefined,
   IsEmail,
+  IsOptional,
   IsString,
   MaxLength,
   MinLength,
@@ -34,7 +36,12 @@ export class CreateOrgUserDto {
   @IsDefined()
   @MinLength(3)
   @MaxLength(128)
+  @ValidateIf((o) => !o.invited)
   company: string;
+
+  @IsOptional()
+  @IsBoolean()
+  invited?: boolean;
 
   datafast_visitor_id: string;
 }
