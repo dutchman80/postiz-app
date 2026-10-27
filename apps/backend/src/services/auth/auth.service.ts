@@ -54,23 +54,14 @@ export class AuthService {
           throw new Error('Registration is disabled');
         }
 
-        const create = await this._organizationService.createOrgAndUser(
+        const { user: created, addedOrg } = await this.createUser(
           body,
+          await this.getUsableInvite(addToOrg),
           ip,
           userAgent
         );
 
-        const addedOrg =
-          addToOrg && typeof addToOrg !== 'boolean'
-            ? await this._organizationService.addUserToOrg(
-                create.users[0].user.id,
-                addToOrg.id,
-                addToOrg.orgId,
-                addToOrg.role
-              )
-            : false;
-
-        const obj = { addedOrg, jwt: await this.jwt(create.users[0].user) };
+        const obj = { addedOrg, jwt: await this.jwt(created) };
         await this._emailService.sendEmailSync(
           body.email,
           'Activate your account',
@@ -90,23 +81,91 @@ export class AuthService {
       return { addedOrg: false, jwt: await this.jwt(user) };
     }
 
-    const user = await this.loginOrRegisterProvider(
-      provider,
-      body as CreateOrgUserDto,
+    const invite = await this.getUsableInvite(addToOrg);
+    const { user, addedOrg: registeredOrg } =
+      await this.loginOrRegisterProvider(
+        provider,
+        body as CreateOrgUserDto,
+        ip,
+        userAgent,
+        invite
+      );
+
+    const addedOrg =
+      registeredOrg ||
+      (invite
+        ? await this._organizationService.addUserToOrg(
+            user.id,
+            invite.id,
+            invite.orgId,
+            invite.role
+          )
+        : false);
+    return { addedOrg, jwt: await this.jwt(user) };
+  }
+
+  async getInviteOrganization(cookie?: string) {
+    const invite = await this.getUsableInvite(this.getOrgFromCookie(cookie));
+    return { name: invite?.name || null };
+  }
+
+  private async getUsableInvite(
+    addToOrg?: boolean | { orgId: string; role: 'USER' | 'ADMIN'; id: string }
+  ) {
+    if (!addToOrg || typeof addToOrg === 'boolean') {
+      return null;
+    }
+
+    const organization = await this._organizationService.getOrgForInvite(
+      addToOrg.id,
+      addToOrg.orgId
+    );
+
+    return organization ? { ...addToOrg, name: organization.name } : null;
+  }
+
+  // a usable invite puts the new user straight into the inviting organization,
+  // otherwise registration creates the user's own organization named after the company
+  private async createUser(
+    body: Omit<CreateOrgUserDto, 'providerToken'> & { providerId?: string },
+    invite: { orgId: string; role: 'USER' | 'ADMIN'; id: string } | null,
+    ip: string,
+    userAgent: string
+  ) {
+    if (invite) {
+      const create = await this._organizationService.createUserInOrg(
+        body,
+        invite,
+        ip,
+        userAgent
+      );
+
+      return {
+        organizationId: create.organizationId,
+        user: create.user,
+        addedOrg: create,
+      };
+    }
+
+    if (!body.company) {
+      throw new Error(
+        body.invited
+          ? 'This invite is no longer valid, refresh the page to sign up without it'
+          : 'Company name is required'
+      );
+    }
+
+    const create = await this._organizationService.createOrgAndUser(
+      body,
       ip,
       userAgent
     );
 
-    const addedOrg =
-      addToOrg && typeof addToOrg !== 'boolean'
-        ? await this._organizationService.addUserToOrg(
-            user.id,
-            addToOrg.id,
-            addToOrg.orgId,
-            addToOrg.role
-          )
-        : false;
-    return { addedOrg, jwt: await this.jwt(user) };
+    return {
+      organizationId: create.id,
+      user: create.users[0].user,
+      addedOrg: false as const,
+    };
   }
 
   public getOrgFromCookie(cookie?: string) {
@@ -141,7 +200,8 @@ export class AuthService {
     provider: Provider,
     body: CreateOrgUserDto,
     ip: string,
-    userAgent: string
+    userAgent: string,
+    invite: { orgId: string; role: 'USER' | 'ADMIN'; id: string } | null
   ) {
     const providerInstance = this._providerManager.getProvider(provider);
     const providerUser = await providerInstance.getUser(body.providerToken);
@@ -155,22 +215,28 @@ export class AuthService {
       provider
     );
     if (user) {
-      return user;
+      return { user, addedOrg: false as const };
     }
 
     if (!(await this.canRegister(provider))) {
       throw new Error('Registration is disabled');
     }
 
-    const create = await this._organizationService.createOrgAndUser(
+    const {
+      organizationId,
+      user: createdUser,
+      addedOrg,
+    } = await this.createUser(
       {
         company: body.company,
         email: providerUser.email,
         password: '',
         provider,
         providerId: providerUser.id,
+        invited: body.invited,
         datafast_visitor_id: body.datafast_visitor_id,
       },
+      invite,
       ip,
       userAgent
     );
@@ -183,13 +249,16 @@ export class AuthService {
 
     try {
       if (providerInstance?.postRegistration) {
-        await providerInstance.postRegistration(body.providerToken, create.id);
+        await providerInstance.postRegistration(
+          body.providerToken,
+          organizationId
+        );
       }
     } catch (err) {
       // Don't fail registration if postRegistration fails
     }
 
-    return create.users[0].user;
+    return { user: createdUser, addedOrg };
   }
 
   private async _track(

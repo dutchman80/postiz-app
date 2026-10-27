@@ -35,10 +35,11 @@ type Inputs = {
   email: string;
   password: string;
   company: string;
+  invited: boolean;
   providerToken: string;
   provider: string;
 };
-export function Register() {
+export function Register({ inviteOrgName }: { inviteOrgName?: string | null }) {
   const getQuery = useSearchParams();
   const fetch = useFetch();
   const [provider] = useState(getQuery?.get('provider')?.toUpperCase());
@@ -66,13 +67,19 @@ export function Register() {
     }
   }, [provider, code]);
   if (!code && !provider) {
-    return <RegisterAfter token="" provider="LOCAL" />;
+    return (
+      <RegisterAfter token="" provider="LOCAL" inviteOrgName={inviteOrgName} />
+    );
   }
   if (!show) {
     return <LoadingComponent />;
   }
   return (
-    <RegisterAfter token={code} provider={provider?.toUpperCase() || 'LOCAL'} />
+    <RegisterAfter
+      token={code}
+      provider={provider?.toUpperCase() || 'LOCAL'}
+      inviteOrgName={inviteOrgName}
+    />
   );
 }
 function getHelpfulReasonForRegistrationFailure(httpCode: number) {
@@ -87,9 +94,11 @@ function getHelpfulReasonForRegistrationFailure(httpCode: number) {
 export function RegisterAfter({
   token,
   provider,
+  inviteOrgName,
 }: {
   token: string;
   provider: string;
+  inviteOrgName?: string | null;
 }) {
   const t = useT();
   const {
@@ -115,6 +124,7 @@ export function RegisterAfter({
     defaultValues: {
       providerToken: token,
       provider: provider,
+      invited: !!inviteOrgName,
     },
   });
   const fetchData = useFetch();
@@ -212,14 +222,22 @@ export function RegisterAfter({
                     />
                   </>
                 )}
-                <Input
-                  label="Company"
-                  translationKey="label_company"
-                  {...form.register('company')}
-                  autoComplete="off"
-                  type="text"
-                  placeholder={t('label_company', 'Company')}
-                />
+                {inviteOrgName ? (
+                  <div className="text-[14px] mb-[16px]">
+                    {t('you_are_joining', 'You are joining {{name}}', {
+                      name: inviteOrgName,
+                    })}
+                  </div>
+                ) : (
+                  <Input
+                    label="Company"
+                    translationKey="label_company"
+                    {...form.register('company')}
+                    autoComplete="off"
+                    type="text"
+                    placeholder={t('label_company', 'Company')}
+                  />
+                )}
               </div>
               <div className={clsx('text-[12px]')}>
                 {t(

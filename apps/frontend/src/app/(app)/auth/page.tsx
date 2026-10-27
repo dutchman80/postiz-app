@@ -1,4 +1,5 @@
 import { internalFetch } from '@gitroom/helpers/utils/internal.fetch';
+import { cookies } from 'next/headers';
 export const dynamic = 'force-dynamic';
 import { Register } from '@gitroom/frontend/components/auth/register';
 import { Metadata } from 'next';
@@ -31,5 +32,26 @@ export default async function Auth(params: {searchParams: Promise<{provider: str
       );
     }
   }
-  return <Register />;
+  return <Register inviteOrgName={await getInviteOrgName()} />;
+}
+
+// the invite token lives in the httpOnly "org" cookie set by proxy.ts,
+// so only the server can tell the register form which team is being joined
+async function getInviteOrgName(): Promise<string | null> {
+  const org = (await cookies()).get('org')?.value;
+  if (!org) {
+    return null;
+  }
+
+  try {
+    const { name } = await (
+      await internalFetch('/auth/invite', {
+        method: 'POST',
+        body: JSON.stringify({ org }),
+      })
+    ).json();
+    return name || null;
+  } catch (err) {
+    return null;
+  }
 }

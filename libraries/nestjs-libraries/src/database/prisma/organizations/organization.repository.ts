@@ -404,12 +404,7 @@ export class OrganizationRepository {
     });
   }
 
-  async addUserToOrg(
-    userId: string,
-    id: string,
-    orgId: string,
-    role: 'USER' | 'ADMIN'
-  ) {
+  async getOrgForInvite(id: string, orgId: string) {
     const checkIfInviteExists = await this._user.model.user.findFirst({
       where: {
         inviteId: id,
@@ -417,24 +412,39 @@ export class OrganizationRepository {
     });
 
     if (checkIfInviteExists) {
-      return false;
+      return null;
     }
 
-    const checkForSubscription =
-      await this._organization.model.organization.findFirst({
-        where: {
-          id: orgId,
-        },
-        select: {
-          subscription: true,
-        },
-      });
+    const organization = await this._organization.model.organization.findFirst({
+      where: {
+        id: orgId,
+      },
+      select: {
+        id: true,
+        name: true,
+        subscription: true,
+      },
+    });
 
     if (
-      process.env.STRIPE_PUBLISHABLE_KEY &&
-      checkForSubscription?.subscription?.subscriptionTier ===
-        SubscriptionTier.STANDARD
+      !organization ||
+      (process.env.STRIPE_PUBLISHABLE_KEY &&
+        organization.subscription?.subscriptionTier ===
+          SubscriptionTier.STANDARD)
     ) {
+      return null;
+    }
+
+    return { id: organization.id, name: organization.name };
+  }
+
+  async addUserToOrg(
+    userId: string,
+    id: string,
+    orgId: string,
+    role: 'USER' | 'ADMIN'
+  ) {
+    if (!(await this.getOrgForInvite(id, orgId))) {
       return false;
     }
 
@@ -497,6 +507,44 @@ export class OrganizationRepository {
             user: true,
           },
         },
+      },
+    });
+  }
+
+  async createUserInOrg(
+    body: Omit<CreateOrgUserDto, 'providerToken'> & { providerId?: string },
+    invite: { id: string; orgId: string; role: 'USER' | 'ADMIN' },
+    hasEmail: boolean,
+    ip: string,
+    userAgent: string
+  ) {
+    return this._userOrg.model.userOrganization.create({
+      data: {
+        role: invite.role,
+        organization: {
+          connect: {
+            id: invite.orgId,
+          },
+        },
+        user: {
+          create: {
+            activated: body.provider !== 'LOCAL' || !hasEmail,
+            email: body.email,
+            password: body.password
+              ? AuthService.hashPassword(body.password)
+              : '',
+            providerName: body.provider,
+            providerId: body.providerId || '',
+            timezone: 0,
+            ip,
+            agent: userAgent,
+            inviteId: invite.id,
+          },
+        },
+      },
+      select: {
+        organizationId: true,
+        user: true,
       },
     });
   }

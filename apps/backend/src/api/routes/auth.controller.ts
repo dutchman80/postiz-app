@@ -19,6 +19,7 @@ import { AuthService } from '@gitroom/backend/services/auth/auth.service';
 import { ForgotReturnPasswordDto } from '@gitroom/nestjs-libraries/dtos/auth/forgot-return.password.dto';
 import { ForgotPasswordDto } from '@gitroom/nestjs-libraries/dtos/auth/forgot.password.dto';
 import { ResendActivationDto } from '@gitroom/nestjs-libraries/dtos/auth/resend-activation.dto';
+import { InviteOrgDto } from '@gitroom/nestjs-libraries/dtos/auth/invite.org.dto';
 import { ApiTags } from '@nestjs/swagger';
 import { getCookieUrlFromDomain } from '@gitroom/helpers/subdomain/subdomain.management';
 import { EmailService } from '@gitroom/nestjs-libraries/services/email.service';
@@ -42,6 +43,11 @@ export class AuthController {
     return {
       register: await this._authService.canRegister(Provider.LOCAL as string),
     };
+  }
+
+  @Post('/invite')
+  async invite(@Body() body: InviteOrgDto) {
+    return this._authService.getInviteOrganization(body.org);
   }
 
   @Post('/register')
