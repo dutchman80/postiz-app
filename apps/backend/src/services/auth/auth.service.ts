@@ -56,7 +56,15 @@ export class AuthService {
         }
 
         const { user: created, addedOrg } = await this.createUser(
-          { ...body, emailVerified: false },
+          {
+            email: body.email,
+            password: body.password,
+            provider: body.provider,
+            company: body.company,
+            invited: body.invited,
+            datafast_visitor_id: body.datafast_visitor_id,
+            emailVerified: false,
+          },
           await this.getUsableInvite(addToOrg),
           ip,
           userAgent

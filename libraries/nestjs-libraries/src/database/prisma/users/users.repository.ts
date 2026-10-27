@@ -23,82 +23,92 @@ export class UsersRepository {
   ) {}
 
   async switchUserCredentials(currentUserId: string, targetUserId: string) {
-    const [users, emails, logins] = await Promise.all([
-      this._user.model.user.findMany({
-        where: { id: { in: [currentUserId, targetUserId] } },
-      }),
-      this._userEmail.model.userEmail.findMany({
-        where: { userId: { in: [currentUserId, targetUserId] } },
-        select: { id: true, userId: true },
-      }),
-      this._userIdentity.model.userIdentity.findMany({
-        where: { userId: { in: [currentUserId, targetUserId] } },
-        select: { id: true, userId: true },
-      }),
-    ]);
-    const current = users.find((user) => user.id === currentUserId);
-    const target = users.find((user) => user.id === targetUserId);
+    // serializable isolation makes a concurrent add of an email or identity on
+    // either account abort one side instead of leaving it behind
+    const { current, target, currentCredentials, targetCredentials } =
+      await this._transaction.model.$transaction(
+        async (tx) => {
+          const [users, emails, logins] = await Promise.all([
+            tx.user.findMany({
+              where: { id: { in: [currentUserId, targetUserId] } },
+            }),
+            tx.userEmail.findMany({
+              where: { userId: { in: [currentUserId, targetUserId] } },
+              select: { id: true, userId: true },
+            }),
+            tx.userIdentity.findMany({
+              where: { userId: { in: [currentUserId, targetUserId] } },
+              select: { id: true, userId: true },
+            }),
+          ]);
+          const current = users.find((user) => user.id === currentUserId);
+          const target = users.find((user) => user.id === targetUserId);
 
-    if (!current || !target) {
-      throw new Error('User not found');
-    }
+          if (!current || !target) {
+            throw new Error('User not found');
+          }
 
-    const idsOf = (rows: { id: string; userId: string }[], userId: string) =>
-      rows.filter((row) => row.userId === userId).map((row) => row.id);
+          const idsOf = (
+            rows: { id: string; userId: string }[],
+            userId: string
+          ) => rows.filter((row) => row.userId === userId).map((row) => row.id);
 
-    const currentCredentials = {
-      email: current.email,
-      password: current.password,
-      providerName: current.providerName,
-      providerId: current.providerId,
-      account: current.account,
-      connectedAccount: current.connectedAccount,
-      activated: current.activated,
-    };
-    const targetCredentials = {
-      email: target.email,
-      password: target.password,
-      providerName: target.providerName,
-      providerId: target.providerId,
-      account: target.account,
-      connectedAccount: target.connectedAccount,
-      activated: target.activated,
-    };
+          const currentCredentials = {
+            email: current.email,
+            password: current.password,
+            providerName: current.providerName,
+            providerId: current.providerId,
+            account: current.account,
+            connectedAccount: current.connectedAccount,
+            activated: current.activated,
+          };
+          const targetCredentials = {
+            email: target.email,
+            password: target.password,
+            providerName: target.providerName,
+            providerId: target.providerId,
+            account: target.account,
+            connectedAccount: target.connectedAccount,
+            activated: target.activated,
+          };
 
-    // (email, providerName) is unique and checked per-statement, so park the
-    // current user on a throwaway email first, then fill each freed slot. The
-    // sign-in rows travel with the credentials, otherwise the login would
-    // still resolve to the account it was switched away from.
-    await this._transaction.model.$transaction([
-      this._user.model.user.update({
-        where: { id: current.id },
-        data: { email: `switch-${makeId(10)}-${current.email}` },
-      }),
-      this._user.model.user.update({
-        where: { id: target.id },
-        data: currentCredentials,
-      }),
-      this._user.model.user.update({
-        where: { id: current.id },
-        data: targetCredentials,
-      }),
-      this._userEmail.model.userEmail.updateMany({
-        where: { id: { in: idsOf(emails, current.id) } },
-        data: { userId: target.id },
-      }),
-      this._userEmail.model.userEmail.updateMany({
-        where: { id: { in: idsOf(emails, target.id) } },
-        data: { userId: current.id },
-      }),
-      this._userIdentity.model.userIdentity.updateMany({
-        where: { id: { in: idsOf(logins, current.id) } },
-        data: { userId: target.id },
-      }),
-      this._userIdentity.model.userIdentity.updateMany({
-        where: { id: { in: idsOf(logins, target.id) } },
-        data: { userId: current.id },
-      }),
-    ]);
+          // (email, providerName) is unique and checked per-statement, so park
+          // the current user on a throwaway email first, then fill each freed
+          // slot. The sign-in rows travel with the credentials, otherwise the
+          // login would still resolve to the account it was switched away from.
+          await tx.user.update({
+            where: { id: current.id },
+            data: { email: `switch-${makeId(10)}-${current.email}` },
+          });
+          await tx.user.update({
+            where: { id: target.id },
+            data: currentCredentials,
+          });
+          await tx.user.update({
+            where: { id: current.id },
+            data: targetCredentials,
+          });
+          await tx.userEmail.updateMany({
+            where: { id: { in: idsOf(emails, current.id) } },
+            data: { userId: target.id },
+          });
+          await tx.userEmail.updateMany({
+            where: { id: { in: idsOf(emails, target.id) } },
+            data: { userId: current.id },
+          });
+          await tx.userIdentity.updateMany({
+            where: { id: { in: idsOf(logins, current.id) } },
+            data: { userId: target.id },
+          });
+          await tx.userIdentity.updateMany({
+            where: { id: { in: idsOf(logins, target.id) } },
+            data: { userId: current.id },
+          });
+
+          return { current, target, currentCredentials, targetCredentials };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+      );
 
     return {
       kept: { id: current.id, email: targetCredentials.email },
@@ -464,14 +474,21 @@ export class UsersRepository {
         },
       });
 
-      return count > 0;
+      return count > 0 || (await this.isVerifiedBy(userId, email));
     } catch (err: any) {
       if (err?.code === 'P2002') {
-        return false;
+        return this.isVerifiedBy(userId, email);
       }
 
       throw err;
     }
+  }
+
+  // a parallel request may already have verified the address for this user
+  private async isVerifiedBy(userId: string, email: string) {
+    const row = await this.getEmailHolder(email);
+
+    return !!row && row.userId === userId && !!row.verifiedAt;
   }
 
   removeEmail(userId: string, id: string) {
@@ -604,7 +621,10 @@ export class UsersRepository {
                 this._userOrg.model.userOrganization.update({
                   where: { id: existing.id },
                   data: {
-                    role: membership.role,
+                    role:
+                      rank[membership.role] > rank[existing.role]
+                        ? membership.role
+                        : existing.role,
                     ...(reEnable ? { disabled: false } : {}),
                   },
                 }),
@@ -676,6 +696,7 @@ export class UsersRepository {
             identities: { none: {} },
           },
           {
+            providerName: { in: [Provider.LOCAL, ...trustedProviders] },
             email: { contains: '@' },
             NOT: { email: { startsWith: 'deleted_' } },
             emails: { none: {} },
