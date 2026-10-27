@@ -98,6 +98,8 @@ export class UsersService {
       if (
         typeof payload.email !== 'string' ||
         typeof payload.userId !== 'string' ||
+        typeof payload.expires !== 'string' ||
+        !dayjs(payload.expires).isValid() ||
         dayjs(payload.expires).isBefore(dayjs())
       ) {
         return false;
