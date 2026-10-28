@@ -587,14 +587,34 @@ export class OrganizationRepository {
   }
 
   // every user owns exactly one Personal organization, personalUserId is unique
-  private personalOrgData(userId: string) {
+  private orgData(name: string) {
     return {
-      name: 'Personal',
+      name,
       apiKey: AuthService.fixedEncryption(makeSecureId(20)),
       allowTrial: true,
       isTrailing: true,
-      personalUserId: userId,
     };
+  }
+
+  private personalOrgData(userId: string) {
+    return { ...this.orgData('Personal'), personalUserId: userId };
+  }
+
+  createOrganization(userId: string, name: string) {
+    return this._organization.model.organization.create({
+      data: {
+        ...this.orgData(name),
+        users: {
+          create: {
+            role: Role.SUPERADMIN,
+            userId,
+          },
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
   }
 
   private createPersonalOrg(

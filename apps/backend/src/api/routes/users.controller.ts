@@ -31,6 +31,7 @@ import { UsersService } from '@gitroom/nestjs-libraries/database/prisma/users/us
 import { UserDetailDto } from '@gitroom/nestjs-libraries/dtos/users/user.details.dto';
 import { EmailNotificationsDto } from '@gitroom/nestjs-libraries/dtos/users/email-notifications.dto';
 import { TimezoneDto } from '@gitroom/nestjs-libraries/dtos/users/timezone.dto';
+import { CreateOrganizationDto } from '@gitroom/nestjs-libraries/dtos/settings/create.organization.dto';
 import { AddEmailDto } from '@gitroom/nestjs-libraries/dtos/users/add.email.dto';
 import { HttpForbiddenException } from '@gitroom/nestjs-libraries/services/exception.filter';
 import { RealIP } from 'nestjs-real-ip';
@@ -101,6 +102,7 @@ export class UsersController {
     return {
       ...user,
       orgId: organization.id,
+      isPersonal: !!organization.personalUserId,
       totalChannels: !process.env.STRIPE_PUBLISHABLE_KEY
         ? 10000
         : // @ts-ignore
@@ -347,6 +349,14 @@ export class UsersController {
         subscription: p.subscription,
         isPersonal: !!p.personalUserId,
       }));
+  }
+
+  @Post('/organizations')
+  createOrg(
+    @GetUserFromRequest() user: User,
+    @Body() body: CreateOrganizationDto
+  ) {
+    return this._orgService.createOrganization(user.id, body.name);
   }
 
   @Post('/change-org')

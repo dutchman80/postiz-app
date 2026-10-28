@@ -154,6 +154,10 @@ export class OrganizationService {
     return this._organizationRepository.getUserOrg(id);
   }
 
+  createOrganization(userId: string, name: string) {
+    return this._organizationRepository.createOrganization(userId, name);
+  }
+
   getOrgsByUserId(userId: string) {
     return this._organizationRepository.getOrgsByUserId(userId);
   }

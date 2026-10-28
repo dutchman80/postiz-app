@@ -91,7 +91,12 @@ export const SettingsPopup: FC<{
     if (user?.tier?.public_api && isGeneral && showLogout) {
       arr.push({ tab: 'agents', label: t('agents_dev', 'Agents / Dev') });
     }
-    if (user?.tier?.team_members && isGeneral && user?.role !== 'USER') {
+    if (
+      user?.tier?.team_members &&
+      isGeneral &&
+      user?.role !== 'USER' &&
+      !user?.isPersonal
+    ) {
       arr.push({ tab: 'teams', label: t('teams', 'Teams') });
     }
     if (user?.tier?.webhooks) {
@@ -177,7 +182,8 @@ export const SettingsPopup: FC<{
               {tab === 'teams' &&
                 !!user?.tier?.team_members &&
                 isGeneral &&
-                user?.role !== 'USER' && (
+                user?.role !== 'USER' &&
+                !user?.isPersonal && (
                   <div>
                     <TeamsComponent />
                   </div>

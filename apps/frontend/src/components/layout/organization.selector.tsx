@@ -1,15 +1,90 @@
 'use client';
 
 import React, { FC, useCallback, useMemo } from 'react';
+import { FormProvider, useForm } from 'react-hook-form';
+import { classValidatorResolver } from '@hookform/resolvers/class-validator';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import useSWR from 'swr';
 import { useUser } from '@gitroom/frontend/components/layout/user.context';
+import { useModals } from '@gitroom/frontend/components/layout/new-modal';
+import { useT } from '@gitroom/react/translation/get.transation.service.client';
+import { useToaster } from '@gitroom/react/toaster/toaster';
+import { Button } from '@gitroom/react/form/button';
+import { Input } from '@gitroom/react/form/input';
+import { CreateOrganizationDto } from '@gitroom/nestjs-libraries/dtos/settings/create.organization.dto';
 import clsx from 'clsx';
+
+const CreateOrganization: FC = () => {
+  const fetch = useFetch();
+  const toast = useToaster();
+  const t = useT();
+  const resolver = useMemo(() => {
+    return classValidatorResolver(CreateOrganizationDto);
+  }, []);
+  const form = useForm({
+    values: {
+      name: '',
+    },
+    resolver,
+    mode: 'onChange',
+  });
+
+  const submit = useCallback(
+    async (values: { name: string }) => {
+      const response = await fetch('/user/organizations', {
+        method: 'POST',
+        body: JSON.stringify(values),
+      });
+      if (!response.ok) {
+        const { message } = await response.json().catch(() => ({} as any));
+        toast.show(
+          (Array.isArray(message) ? message[0] : message) ||
+            t(
+              'could_not_create_organization',
+              'Could not create the organization'
+            ),
+          'warning'
+        );
+        return;
+      }
+      const { id } = await response.json();
+      await fetch('/user/change-org', {
+        method: 'POST',
+        body: JSON.stringify({ id }),
+      });
+      window.location.reload();
+    },
+    [t]
+  );
+
+  return (
+    <FormProvider {...form}>
+      <form onSubmit={form.handleSubmit(submit)}>
+        <div className="relative flex gap-[10px] flex-col flex-1 p-[16px] pt-0">
+          <Input
+            label="Organization name"
+            translationKey="organization_name"
+            placeholder={t(
+              'enter_organization_name',
+              'Enter organization name'
+            )}
+            name="name"
+          />
+          <Button type="submit" className="mt-[18px]">
+            {t('create_organization', 'Create organization')}
+          </Button>
+        </div>
+      </form>
+    </FormProvider>
+  );
+};
 export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
   asOpenSelect,
 }) => {
   const fetch = useFetch();
   const user = useUser();
+  const t = useT();
+  const modals = useModals();
   const load = useCallback(async () => {
     return await (await fetch('/user/organizations')).json();
   }, []);
@@ -24,8 +99,26 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
     return data?.find((d: any) => d.id === user?.orgId);
   }, [data]);
   const withoutCurrent = useMemo(() => {
-    return data?.filter((d: any) => d.id !== user?.orgId);
+    // Array.sort is stable, so the other organizations keep the received order
+    return data
+      ?.filter((d: any) => d.id !== user?.orgId)
+      .sort((a: any, b: any) => Number(b.isPersonal) - Number(a.isPersonal));
   }, [current, data]);
+  const orgName = useCallback(
+    (org: { name: string; isPersonal?: boolean }) =>
+      org.isPersonal ? t('personal_organization', 'Personal') : org.name,
+    [t]
+  );
+  const createOrg = useCallback(() => {
+    modals.openModal({
+      classNames: {
+        modal: 'bg-transparent text-textColor',
+      },
+      title: t('create_organization', 'Create organization'),
+      withCloseButton: true,
+      children: <CreateOrganization />,
+    });
+  }, [t]);
   const changeOrg = useCallback(
     (org: { name: string; id: string }) => async () => {
       await fetch('/user/change-org', {
@@ -38,7 +131,7 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
     },
     []
   );
-  if (isLoading || (!isLoading && data?.length === 1)) {
+  if (isLoading || !data?.length) {
     return null;
   }
   return (
@@ -46,12 +139,18 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
       <div className="hover:text-newTextColor">
         <div className="group text-[12px] relative">
           {asOpenSelect && (
-            <div className="bg-btnPrimary !flex !relative max-w-[500px] mx-auto py-[12px] px-[12px]">Select Organization</div>
+            <div className="bg-btnPrimary !flex !relative max-w-[500px] mx-auto py-[12px] px-[12px]">
+              Select Organization
+            </div>
           )}
           {!asOpenSelect && (
             <div className="flex items-center gap-[6px]">
               <svg
-                className={user?.tier.current === 'FREE' ? 'animate-bounce drop-shadow-glow': ''}
+                className={
+                  user?.tier.current === 'FREE'
+                    ? 'animate-bounce drop-shadow-glow'
+                    : ''
+                }
                 width="24"
                 height="24"
                 viewBox="0 0 26 26"
@@ -64,21 +163,26 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
                 />
               </svg>
               {!!current?.name && (
-                <div className="max-w-[240px] truncate mobile:hidden">{current?.name}</div>
+                <div className="max-w-[240px] truncate mobile:hidden">
+                  {orgName(current)}
+                </div>
               )}
             </div>
           )}
-          {data?.length > 1 && (
+          {
             <div
               className={clsx(
                 'hidden py-[12px] px-[12px] group-hover:flex absolute top-[100%] end-0 w-max max-w-[400px] bg-third border-tableBorder border gap-[12px] cursor-pointer flex-col',
-                asOpenSelect ? '!flex !relative max-w-[500px] mx-auto mb-[10px]' : '',
+                asOpenSelect
+                  ? '!flex !relative max-w-[500px] mx-auto mb-[10px]'
+                  : ''
               )}
             >
               {withoutCurrent?.map(
                 (org: {
                   name: string;
                   id: string;
+                  isPersonal?: boolean;
                   users: { role: 'SUPERADMIN' | 'ADMIN' | 'USER' }[];
                 }) => (
                   <div
@@ -86,7 +190,7 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
                     onClick={changeOrg(org)}
                     className="whitespace-nowrap truncate"
                   >
-                    {org?.name}
+                    {orgName(org)}
                     {!!org?.users?.[0]?.role && (
                       <span className="text-customColor18">
                         {' '}
@@ -102,11 +206,16 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
                   </div>
                 )
               )}
+              <div onClick={createOrg} className="whitespace-nowrap truncate">
+                {t('create_organization', 'Create organization')}
+              </div>
             </div>
-          )}
+          }
         </div>
       </div>
-      {!asOpenSelect && <div className="w-[1px] h-[20px] bg-blockSeparator mobile:hidden" />}
+      {!asOpenSelect && (
+        <div className="w-[1px] h-[20px] bg-blockSeparator mobile:hidden" />
+      )}
     </>
   );
 };
