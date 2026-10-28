@@ -122,7 +122,7 @@ export class AuthMiddleware implements NestMiddleware {
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-expect-error
       req.org = setOrg;
-      // read scope for cross-organization endpoints; equals [org.id] while impersonating
+      // read scope for cross-organization endpoints; all of the user's non-disabled organizations
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-expect-error
       req.orgIds = organization.map((o) => o.id);

@@ -1,4 +1,5 @@
 import { Controller, Get, HttpException, Query } from '@nestjs/common';
+import { HttpForbiddenException } from '@gitroom/nestjs-libraries/services/exception.filter';
 import { ApiTags } from '@nestjs/swagger';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -25,21 +26,33 @@ export class AllOrgsController {
     }
   }
 
+  private assertOrgScope(orgIds: string[]) {
+    // Prisma treats `{ in: undefined }` as no filter, so fail closed.
+    if (!Array.isArray(orgIds) || orgIds.length === 0) {
+      throw new HttpForbiddenException();
+    }
+  }
+
   @Get('/posts')
   async getPosts(
     @GetOrgIdsFromRequest() orgIds: string[],
     @Query() query: GetPostsDto
   ) {
+    this.assertOrgScope(orgIds);
     // Aggregate path only; the shared getPosts path is unbounded, see issue #13.
     // 45 days = longest calendar month view (31 days) plus margin.
-    // new Date rejects impossible ISO dates (2026-02-30), dayjs would roll them over.
-    const startDate = new Date(query.startDate);
-    const endDate = new Date(query.endDate);
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    // Parse each input once. dayjs rolls impossible dates over (2026-02-30
+    // becomes 2026-03-02), so compare the date part back against the input.
+    const start = dayjs.utc(query.startDate);
+    const end = dayjs.utc(query.endDate);
+    if (
+      !start.isValid() ||
+      !end.isValid() ||
+      start.format('YYYY-MM-DD') !== query.startDate.slice(0, 10) ||
+      end.format('YYYY-MM-DD') !== query.endDate.slice(0, 10)
+    ) {
       throw new HttpException('Invalid date range', 400);
     }
-    const start = dayjs.utc(startDate);
-    const end = dayjs.utc(endDate);
     if (
       end.isBefore(start) ||
       end.diff(start, 'day', true) > 45 ||
@@ -54,6 +67,7 @@ export class AllOrgsController {
 
   @Get('/integrations')
   async getIntegrations(@GetOrgIdsFromRequest() orgIds: string[]) {
+    this.assertOrgScope(orgIds);
     return {
       integrations: (
         await this._integrationService.getIntegrationsForOrganizations(orgIds)
