@@ -22,6 +22,7 @@ import { startMcp } from '@gitroom/nestjs-libraries/chat/start.mcp';
 import { AuthProviderManager } from '@gitroom/backend/services/auth/providers/providers.manager';
 import { Provider } from '@prisma/client';
 import { UsersService } from '@gitroom/nestjs-libraries/database/prisma/users/users.service';
+import { OrganizationService } from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.service';
 
 async function start() {
   const app = await NestFactory.create(AppModule, {
@@ -94,6 +95,14 @@ async function start() {
     for (const conflict of conflicts) {
       Logger.warn(
         `Login ${conflict.login} of user ${conflict.userId} is already owned by user ${conflict.ownerId}, merge them with "accounts:merge"`,
+        'Account backfill'
+      );
+    }
+
+    const personal = await app.get(OrganizationService).backfillPersonalOrgs();
+    if (personal > 0) {
+      Logger.log(
+        `Created ${personal} Personal organizations`,
         'Account backfill'
       );
     }

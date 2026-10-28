@@ -60,7 +60,6 @@ export class AuthService {
             email: body.email,
             password: body.password,
             provider: body.provider,
-            company: body.company,
             invited: body.invited,
             datafast_visitor_id: body.datafast_visitor_id,
             emailVerified: false,
@@ -183,7 +182,7 @@ export class AuthService {
   }
 
   // a usable invite puts the new user straight into the inviting organization,
-  // otherwise registration creates the user's own organization named after the company
+  // every user also gets their own Personal organization
   private async createUser(
     body: NewUserBody,
     invite: { orgId: string; role: 'USER' | 'ADMIN'; id: string } | null,
@@ -205,15 +204,13 @@ export class AuthService {
       };
     }
 
-    if (!body.company) {
+    if (body.invited) {
       throw new Error(
-        body.invited
-          ? 'This invite is no longer valid, refresh the page to sign up without it'
-          : 'Company name is required'
+        'This invite is no longer valid, refresh the page to sign up without it'
       );
     }
 
-    const create = await this._organizationService.createOrgAndUser(
+    const create = await this._organizationService.createUserWithPersonalOrg(
       body,
       ip,
       userAgent
@@ -283,7 +280,6 @@ export class AuthService {
       addedOrg,
     } = await this.createUser(
       {
-        company: body.company,
         email: providerUser.email,
         password: '',
         provider,

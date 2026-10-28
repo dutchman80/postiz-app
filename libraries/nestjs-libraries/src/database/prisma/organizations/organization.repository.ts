@@ -9,6 +9,7 @@ import {
   SubscriptionTier,
 } from '@prisma/client';
 import { Injectable } from '@nestjs/common';
+import { chunk } from 'lodash';
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { CreateOrgUserDto } from '@gitroom/nestjs-libraries/dtos/auth/create.org.user.dto';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
@@ -31,7 +32,6 @@ export class OrganizationRepository {
     private _organization: PrismaRepository<'organization'>,
     private _userOrg: PrismaRepository<'userOrganization'>,
     private _user: PrismaRepository<'user'>,
-    private _userEmail: PrismaRepository<'userEmail'>,
     private _transaction: PrismaTransaction
   ) {}
 
@@ -454,12 +454,14 @@ export class OrganizationRepository {
       select: {
         id: true,
         name: true,
+        personalUserId: true,
         subscription: true,
       },
     });
 
     if (
       !organization ||
+      organization.personalUserId ||
       (process.env.STRIPE_PUBLISHABLE_KEY &&
         organization.subscription?.subscriptionTier ===
           SubscriptionTier.STANDARD)
@@ -553,57 +555,96 @@ export class OrganizationRepository {
   // releaseId is the pending row of the address, deleted together with the
   // create so a failed registration never frees the address. A row verified in
   // the meantime is not deleted, which fails the whole transaction.
-  private async withRelease<T>(
+  private withRelease<T>(
     releaseId: string | undefined,
-    create: Prisma.PrismaPromise<T>
+    create: (tx: Prisma.TransactionClient) => Promise<T>
   ): Promise<T> {
-    if (!releaseId) {
-      return create;
-    }
+    return this._transaction.model.$transaction(async (tx) => {
+      if (releaseId) {
+        await tx.userEmail.delete({
+          where: { id: releaseId, verifiedAt: null },
+          select: { id: true },
+        });
+      }
 
-    const [, created] = await this._transaction.model.$transaction([
-      this._userEmail.model.userEmail.delete({
-        where: { id: releaseId, verifiedAt: null },
-        select: { id: true },
-      }),
-      create,
-    ]);
-
-    return created;
+      return create(tx);
+    });
   }
 
-  async createOrgAndUser(
-    body: NewUserBody,
-    newUserEmail: NewUserEmail,
-    ip: string,
-    userAgent: string
-  ) {
-    const create = this._organization.model.organization.create({
+  // every user owns exactly one Personal organization, personalUserId is unique
+  private createPersonalOrg(tx: Prisma.TransactionClient, userId: string) {
+    return tx.organization.create({
       data: {
-        name: body.company,
+        name: 'Personal',
         apiKey: AuthService.fixedEncryption(makeSecureId(20)),
         allowTrial: true,
         isTrailing: true,
+        personalUserId: userId,
         users: {
           create: {
             role: Role.SUPERADMIN,
-            user: {
-              create: this.newUserData(body, newUserEmail, ip, userAgent),
-            },
+            userId,
           },
         },
       },
       select: {
         id: true,
-        users: {
-          select: {
-            user: true,
-          },
-        },
+      },
+    });
+  }
+
+  createUserWithPersonalOrg(
+    body: NewUserBody,
+    newUserEmail: NewUserEmail,
+    ip: string,
+    userAgent: string
+  ) {
+    return this.withRelease(newUserEmail.releaseId, async (tx) => {
+      const user = await tx.user.create({
+        data: this.newUserData(body, newUserEmail, ip, userAgent),
+      });
+      const organization = await this.createPersonalOrg(tx, user.id);
+
+      return { id: organization.id, users: [{ user }] };
+    });
+  }
+
+  async backfillPersonalOrgs() {
+    const users = await this._user.model.user.findMany({
+      where: {
+        deletedAt: null,
+        personalOrganization: null,
+      },
+      select: {
+        id: true,
       },
     });
 
-    return this.withRelease(newUserEmail.releaseId, create);
+    let created = 0;
+    for (const part of chunk(users, 50)) {
+      await Promise.all(
+        part.map(async (user) => {
+          try {
+            await this._transaction.model.$transaction((tx) =>
+              this.createPersonalOrg(tx, user.id)
+            );
+            created++;
+          } catch (err) {
+            // another instance created it first
+            if (
+              !(
+                err instanceof Prisma.PrismaClientKnownRequestError &&
+                err.code === 'P2002'
+              )
+            ) {
+              throw err;
+            }
+          }
+        })
+      );
+    }
+
+    return created;
   }
 
   async createUserInOrg(
@@ -613,28 +654,31 @@ export class OrganizationRepository {
     ip: string,
     userAgent: string
   ) {
-    const create = this._userOrg.model.userOrganization.create({
-      data: {
-        role: invite.role,
-        organization: {
-          connect: {
-            id: invite.orgId,
+    return this.withRelease(newUserEmail.releaseId, async (tx) => {
+      const created = await tx.userOrganization.create({
+        data: {
+          role: invite.role,
+          organization: {
+            connect: {
+              id: invite.orgId,
+            },
+          },
+          user: {
+            create: {
+              ...this.newUserData(body, newUserEmail, ip, userAgent),
+              inviteId: invite.id,
+            },
           },
         },
-        user: {
-          create: {
-            ...this.newUserData(body, newUserEmail, ip, userAgent),
-            inviteId: invite.id,
-          },
+        select: {
+          organizationId: true,
+          user: true,
         },
-      },
-      select: {
-        organizationId: true,
-        user: true,
-      },
-    });
+      });
+      await this.createPersonalOrg(tx, created.user.id);
 
-    return this.withRelease(newUserEmail.releaseId, create);
+      return created;
+    });
   }
 
   getOrgByCustomerId(customerId: string) {

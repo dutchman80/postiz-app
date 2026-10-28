@@ -20,6 +20,9 @@ import {
 import { UsersRepository } from '@gitroom/nestjs-libraries/database/prisma/users/users.repository';
 import { AutopostService } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.service';
 
+const PERSONAL_ORG_TEAM_ERROR =
+  'Team members cannot be added to a personal organization';
+
 @Injectable()
 export class OrganizationService {
   constructor(
@@ -64,9 +67,13 @@ export class OrganizationService {
     return err;
   }
 
-  async createOrgAndUser(body: NewUserBody, ip: string, userAgent: string) {
+  async createUserWithPersonalOrg(
+    body: NewUserBody,
+    ip: string,
+    userAgent: string
+  ) {
     try {
-      return await this._organizationRepository.createOrgAndUser(
+      return await this._organizationRepository.createUserWithPersonalOrg(
         body,
         await this.getNewUserEmail(body),
         ip,
@@ -94,6 +101,10 @@ export class OrganizationService {
     } catch (err) {
       throw this.mapEmailRace(err);
     }
+  }
+
+  backfillPersonalOrgs() {
+    return this._organizationRepository.backfillPersonalOrgs();
   }
 
   getOrgForInvite(id: string, orgId: string) {
@@ -171,6 +182,10 @@ export class OrganizationService {
   }
 
   async inviteTeamMember(org: Organization, user: User, body: AddTeamMemberDto) {
+    if (org.personalUserId) {
+      throw new HttpException(PERSONAL_ORG_TEAM_ERROR, 400);
+    }
+
     const timeLimit = dayjs().add(2, 'day').format('YYYY-MM-DD HH:mm:ss');
     const id = makeId(5);
     // only the invite fields, the body can carry undeclared properties
@@ -197,6 +212,10 @@ export class OrganizationService {
   }
 
   async addTeamMemberByEmail(org: Organization, body: AdminAddTeamMemberDto) {
+    if (org.personalUserId) {
+      throw new HttpException(PERSONAL_ORG_TEAM_ERROR, 400);
+    }
+
     const tier =
       // @ts-ignore
       org?.subscription?.subscriptionTier ||
