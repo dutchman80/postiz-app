@@ -5,6 +5,7 @@ import {
   APPROVED_SUBMIT_FOR_ORDER,
   CreationMethod,
   Post,
+  Prisma,
   State,
 } from '@prisma/client';
 import { GetPostsDto } from '@gitroom/nestjs-libraries/dtos/posts/get.posts.dto';
@@ -152,7 +153,18 @@ export class PostsRepository {
     }
   }
 
-  async getPosts(orgId: string, query: GetPostsDto) {
+  getPosts(orgId: string, query: GetPostsDto) {
+    return this.findCalendarPosts(orgId, query);
+  }
+
+  getPostsForOrganizations(orgIds: string[], query: GetPostsDto) {
+    return this.findCalendarPosts({ in: orgIds }, query);
+  }
+
+  private async findCalendarPosts(
+    organizationId: string | Prisma.StringFilter,
+    query: GetPostsDto
+  ) {
     // Use the provided start and end dates directly
     const startDate = dayjs.utc(query.startDate).toDate();
     const endDate = dayjs.utc(query.endDate).toDate();
@@ -163,7 +175,7 @@ export class PostsRepository {
           {
             OR: [
               {
-                organizationId: orgId,
+                organizationId,
               },
             ],
           },
@@ -185,7 +197,7 @@ export class PostsRepository {
         ],
         integration: {
           deletedAt: null,
-          organizationId: orgId,
+          organizationId,
           ...(query.customer ? { customerId: query.customer } : {}),
         },
         deletedAt: null,

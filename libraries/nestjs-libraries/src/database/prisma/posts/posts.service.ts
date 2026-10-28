@@ -497,6 +497,12 @@ export class PostsService {
     });
   }
 
+  async getPostsForOrganizationsMinified(orgIds: string[], query: GetPostsDto) {
+    return minifyPosts({
+      posts: await this._postRepository.getPostsForOrganizations(orgIds, query),
+    });
+  }
+
   async getPostsList(orgId: string, query: GetPostsListDto) {
     return minifyPostsList(
       await this._postRepository.getPostsList(orgId, query)
