@@ -211,8 +211,10 @@ export const MenuGroupComponent: FC<
   const t = useT();
   const modals = useModals();
   const toaster = useToaster();
+  // read-only groups are organizations, keyed by id so equal names do not share state
+  const openKey = (readOnly ? group.id : group.name) + '_isOpen';
   const [isOpen, setIsOpen] = useState(
-    !!+(localStorage.getItem(group.name + '_isOpen') || '1')
+    !!+(localStorage.getItem(openKey) || '1')
   );
   const editGroupName = useCallback(
     async (e: any) => {
@@ -242,7 +244,7 @@ export const MenuGroupComponent: FC<
   const changeOpenClose = useCallback(
     (e: any) => {
       setIsOpen(!isOpen);
-      localStorage.setItem(group.name + '_isOpen', isOpen ? '0' : '1');
+      localStorage.setItem(openKey, isOpen ? '0' : '1');
       e.stopPropagation();
     },
     [isOpen]
@@ -389,7 +391,10 @@ export const MenuComponent: FC<
         </div>
         {(integration.inBetweenSteps || integration.refreshNeeded) && (
           <div
-            className="absolute start-0 top-0 w-[39px] h-[46px] cursor-pointer"
+            className={clsx(
+              'absolute start-0 top-0 w-[39px] h-[46px]',
+              !readOnly && 'cursor-pointer'
+            )}
             onClick={
               readOnly
                 ? undefined
@@ -547,13 +552,14 @@ export const LaunchesComponent: FC<{ readOnly?: boolean }> = ({ readOnly }) => {
           ? p[0].organization?.id
           : p[0].customer?.id || '') as string,
         isEmpty: p.length === 0,
+        isPersonal: !!(readOnly && p[0].organization?.isPersonal),
         values: orderBy(
           p,
           ['type', 'disabled', 'identifier'],
           ['desc', 'asc', 'asc']
         ),
       })),
-      ['isEmpty', 'name'],
+      readOnly ? ['isPersonal', 'name'] : ['isEmpty', 'name'],
       ['desc', 'asc']
     );
   }, [sortedIntegrations, readOnly, t]);

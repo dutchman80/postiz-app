@@ -1047,7 +1047,7 @@ export const CalendarColumn: FC<{
         <div
           className={clsx(
             'flex-col text-[12px] pointer w-full flex scrollbar scrollbar-thumb-tableBorder scrollbar-track-secondary',
-            isBeforeNow ? 'flex-1' : 'cursor-pointer',
+            isBeforeNow ? 'flex-1' : !readOnly && 'cursor-pointer',
             isBeforeNow && postList.length === 0 && 'col-calendar',
             // the "Date passed" hint is wider than a phone month cell
             display === 'month' && 'mobile:before:hidden'
@@ -1243,8 +1243,10 @@ const CalendarItem: FC<{
   const user = useUser();
   const { readOnly } = useCalendar();
   const orgName = readOnly
-    ? integrations.find((i) => i.id === post.integration.id)?.organization?.name
+    ? integrations.find((i) => i?.id === post.integration.id)?.organization
+        ?.name
     : undefined;
+  const readOnlyTitle = orgName || post.integration?.name;
   const showCreationMethodBadge =
     user?.impersonate &&
     post.creationMethod &&
@@ -1324,13 +1326,13 @@ const CalendarItem: FC<{
         <div
           className={clsx(
             post?.tags?.[0]?.tag?.color ? 'text-shadow-tags' : '',
-            !readOnly && 'group-hover:hidden cursor-pointer'
+            readOnly ? 'truncate min-w-0' : 'group-hover:hidden cursor-pointer'
           )}
         >
           {readOnly ? (
             <>
-              <span className="font-[600] truncate">{orgName}</span>
-              {!!post.tags.length && ' · '}
+              <span className="font-[600]">{readOnlyTitle}</span>
+              {!!readOnlyTitle && !!post.tags.length && ' · '}
               {post.tags.map((p) => p.tag.name).join(' · ')}
             </>
           ) : (

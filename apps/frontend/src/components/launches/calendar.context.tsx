@@ -205,7 +205,8 @@ export const CalendarWeekProvider: FC<{
   // Initialize with current date range based on URL params or defaults
   const initStartDate = searchParams.get('startDate');
   const initEndDate = searchParams.get('endDate');
-  const initCustomer = searchParams.get('customer');
+  // no customer picker in read-only mode, so ignore a stale ?customer=
+  const initCustomer = readOnly ? null : searchParams.get('customer');
 
   const initialRange =
     initStartDate && initEndDate
@@ -244,7 +245,7 @@ export const CalendarWeekProvider: FC<{
   const loadData = useCallback(async () => {
     const modifiedParams = new URLSearchParams({
       display: filters.display,
-      customer: filters?.customer?.toString() || '',
+      customer: (!readOnly && filters?.customer?.toString()) || '',
       startDate: newDayjs(filters.startDate).startOf('day').utc().format(),
       endDate: newDayjs(filters.endDate).endOf('day').utc().format(),
     }).toString();
@@ -350,7 +351,9 @@ export const CalendarWeekProvider: FC<{
         `startDate=${newFilters.startDate}`,
         `endDate=${newFilters.endDate}`,
         `display=${newFilters.display}`,
-        newFilters.customer ? `customer=${newFilters.customer}` : ``,
+        !readOnly && newFilters.customer
+          ? `customer=${newFilters.customer}`
+          : ``,
       ].filter((f) => f);
       window.history.replaceState(
         null,
