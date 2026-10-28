@@ -99,7 +99,7 @@ export class AuthMiddleware implements NestMiddleware {
       const setOrg =
         organization.find((org) => org.id === orgHeader) ||
         organization.find((org) => org.subscription) ||
-        // an empty Personal org is a poor landing page for existing users
+        // without a saved choice, a team organization is the default over the Personal one
         organization.find((org) => !org.personalUserId) ||
         organization[0];
 

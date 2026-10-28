@@ -217,8 +217,8 @@ export class AuthService {
     );
 
     return {
-      organizationId: create.id,
-      user: create.users[0].user,
+      organizationId: create.organizationId,
+      user: create.user,
       addedOrg: false as const,
     };
   }

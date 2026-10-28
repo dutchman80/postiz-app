@@ -35,15 +35,44 @@ export class OrganizationRepository {
     private _transaction: PrismaTransaction
   ) {}
 
-  async createMaxUser(
-    id: string,
-    name: string,
-    saasName: string,
-    email: string
-  ) {
+  createMaxUser(id: string, name: string, saasName: string, email: string) {
     const userEmail = email
       ? email.split('@').join(`+${saasName}@`)
       : `${saasName}+` + makeId(10) + '@postiz.com';
+    const userName = name ? `${name}###${id}` : `Unnamed User###${id}`;
+    const data: Prisma.OrganizationCreateInput = {
+      name: userName,
+      apiKey: AuthService.fixedEncryption(makeSecureId(20)),
+      isTrailing: false,
+      subscription: {
+        create: {
+          totalChannels: 1000000,
+          subscriptionTier: 'ULTIMATE',
+          isLifetime: true,
+          period: 'YEARLY',
+        },
+      },
+      users: {
+        create: {
+          role: Role.SUPERADMIN,
+          user: {
+            create: {
+              activated: true,
+              email: userEmail,
+              name: userName,
+              providerName: 'LOCAL',
+              password: AuthService.hashPassword(makeSecureId(500)),
+              timezone: 0,
+              emails: {
+                create: {
+                  email: userEmail.toLowerCase(),
+                },
+              },
+            },
+          },
+        },
+      },
+    };
 
     return this._transaction.model.$transaction(async (tx) => {
       const organization = await tx.organization.create({
@@ -56,39 +85,7 @@ export class OrganizationRepository {
             },
           },
         },
-        data: {
-          name: name ? `${name}###${id}` : `Unnamed User###${id}`,
-          apiKey: AuthService.fixedEncryption(makeSecureId(20)),
-          isTrailing: false,
-          subscription: {
-            create: {
-              totalChannels: 1000000,
-              subscriptionTier: 'ULTIMATE',
-              isLifetime: true,
-              period: 'YEARLY',
-            },
-          },
-          users: {
-            create: {
-              role: Role.SUPERADMIN,
-              user: {
-                create: {
-                  activated: true,
-                  email: userEmail,
-                  name: name ? `${name}###${id}` : `Unnamed User###${id}`,
-                  providerName: 'LOCAL',
-                  password: AuthService.hashPassword(makeSecureId(500)),
-                  timezone: 0,
-                  emails: {
-                    create: {
-                      email: userEmail.toLowerCase(),
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
+        data,
       });
       await this.createPersonalOrg(tx, organization.users[0].userId);
 
@@ -590,17 +587,23 @@ export class OrganizationRepository {
   }
 
   // every user owns exactly one Personal organization, personalUserId is unique
+  private personalOrgData(userId: string) {
+    return {
+      name: 'Personal',
+      apiKey: AuthService.fixedEncryption(makeSecureId(20)),
+      allowTrial: true,
+      isTrailing: true,
+      personalUserId: userId,
+    };
+  }
+
   private createPersonalOrg(
     tx: Pick<Prisma.TransactionClient, 'organization'>,
     userId: string
   ) {
     return tx.organization.create({
       data: {
-        name: 'Personal',
-        apiKey: AuthService.fixedEncryption(makeSecureId(20)),
-        allowTrial: true,
-        isTrailing: true,
-        personalUserId: userId,
+        ...this.personalOrgData(userId),
         users: {
           create: {
             role: Role.SUPERADMIN,
@@ -628,7 +631,7 @@ export class OrganizationRepository {
       });
       const organization = await this.createPersonalOrg(tx, user.id);
 
-      return { id: organization.id, users: [{ user }] };
+      return { organizationId: organization.id, user };
     });
   }
 
@@ -644,25 +647,25 @@ export class OrganizationRepository {
     });
 
     let created = 0;
-    for (const part of chunk(users, 10)) {
-      await Promise.all(
-        part.map(async (user) => {
-          try {
-            await this.createPersonalOrg(this._organization.model, user.id);
-            created++;
-          } catch (err) {
-            // another instance created it first
-            if (
-              !(
-                err instanceof Prisma.PrismaClientKnownRequestError &&
-                err.code === 'P2002'
-              )
-            ) {
-              throw err;
-            }
-          }
-        })
-      );
+    for (const part of chunk(users, 500)) {
+      // the organization never exists without its owner membership
+      created += await this._transaction.model.$transaction(async (tx) => {
+        const orgs = await tx.organization.createManyAndReturn({
+          data: part.map((user) => this.personalOrgData(user.id)),
+          skipDuplicates: true,
+          select: { id: true, personalUserId: true },
+        });
+        await tx.userOrganization.createMany({
+          data: orgs.map((org) => ({
+            organizationId: org.id,
+            userId: org.personalUserId!,
+            role: Role.SUPERADMIN,
+          })),
+          skipDuplicates: true,
+        });
+
+        return orgs.length;
+      });
     }
 
     return created;

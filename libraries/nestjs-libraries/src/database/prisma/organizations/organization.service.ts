@@ -20,9 +20,6 @@ import {
 import { UsersRepository } from '@gitroom/nestjs-libraries/database/prisma/users/users.repository';
 import { AutopostService } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.service';
 
-const PERSONAL_ORG_TEAM_ERROR =
-  'Team members cannot be added to a personal organization';
-
 @Injectable()
 export class OrganizationService {
   constructor(
@@ -181,10 +178,17 @@ export class OrganizationService {
     return this._organizationRepository.getOrgByCustomerId(customerId);
   }
 
-  async inviteTeamMember(org: Organization, user: User, body: AddTeamMemberDto) {
+  private assertNotPersonal(org: Organization) {
     if (org.personalUserId) {
-      throw new HttpException(PERSONAL_ORG_TEAM_ERROR, 400);
+      throw new HttpException(
+        'Team members cannot be added to a personal organization',
+        400
+      );
     }
+  }
+
+  async inviteTeamMember(org: Organization, user: User, body: AddTeamMemberDto) {
+    this.assertNotPersonal(org);
 
     const timeLimit = dayjs().add(2, 'day').format('YYYY-MM-DD HH:mm:ss');
     const id = makeId(5);
@@ -212,9 +216,7 @@ export class OrganizationService {
   }
 
   async addTeamMemberByEmail(org: Organization, body: AdminAddTeamMemberDto) {
-    if (org.personalUserId) {
-      throw new HttpException(PERSONAL_ORG_TEAM_ERROR, 400);
-    }
+    this.assertNotPersonal(org);
 
     const tier =
       // @ts-ignore
