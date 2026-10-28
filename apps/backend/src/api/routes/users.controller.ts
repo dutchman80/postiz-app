@@ -221,6 +221,13 @@ export class UsersController {
     }
   }
 
+  private assertNotImpersonating(req: Request, message: string) {
+    const impersonate = req.cookies.impersonate || req.headers.impersonate;
+    if (impersonate) {
+      throw new HttpException(message, 400);
+    }
+  }
+
   @Post('/personal')
   async changePersonal(
     @GetUserFromRequest() user: User,
@@ -359,13 +366,10 @@ export class UsersController {
     @Req() req: Request,
     @Body() body: CreateOrganizationDto
   ) {
-    const impersonate = req.cookies.impersonate || req.headers.impersonate;
-    if (impersonate) {
-      throw new HttpException(
-        'Organization cannot be created while impersonating',
-        400
-      );
-    }
+    this.assertNotImpersonating(
+      req,
+      'Organization cannot be created while impersonating'
+    );
 
     return this._orgService.createOrganization(user.id, body.name);
   }
@@ -405,13 +409,10 @@ export class UsersController {
     @Req() req: Request,
     @Res({ passthrough: true }) response: Response
   ) {
-    const impersonate = req.cookies.impersonate || req.headers.impersonate;
-    if (impersonate) {
-      throw new HttpException(
-        'Account cannot be deleted while impersonating',
-        400
-      );
-    }
+    this.assertNotImpersonating(
+      req,
+      'Account cannot be deleted while impersonating'
+    );
 
     // Cancel billing before scrubbing the account — once the account is
     // deleted there is no way to retry a failed cancellation

@@ -14,11 +14,22 @@ import { Input } from '@gitroom/react/form/input';
 import { CreateOrganizationDto } from '@gitroom/nestjs-libraries/dtos/settings/create.organization.dto';
 import clsx from 'clsx';
 
+const switchOrg = async (fetch: ReturnType<typeof useFetch>, id: string) => {
+  const response = await fetch('/user/change-org', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  });
+  if (!response.ok) {
+    return false;
+  }
+  window.location.reload();
+  return true;
+};
+
 const CreateOrganization: FC = () => {
   const fetch = useFetch();
   const toast = useToaster();
   const t = useT();
-  const modals = useModals();
   const resolver = useMemo(() => {
     return classValidatorResolver(CreateOrganizationDto);
   }, []);
@@ -30,41 +41,32 @@ const CreateOrganization: FC = () => {
     mode: 'onChange',
   });
 
-  const submit = useCallback(
-    async (values: { name: string }) => {
-      const response = await fetch('/user/organizations', {
-        method: 'POST',
-        body: JSON.stringify(values),
-      });
-      if (!response.ok) {
-        const { message } = await response.json().catch(() => ({} as any));
-        toast.show(
-          (Array.isArray(message) ? message[0] : message) ||
-            t(
-              'could_not_create_organization',
-              'Could not create the organization'
-            ),
-          'warning'
-        );
-        return;
-      }
-      const { id } = await response.json();
-      const changed = await fetch('/user/change-org', {
-        method: 'POST',
-        body: JSON.stringify({ id }),
-      });
-      if (!changed.ok) {
-        toast.show(
-          t('error_occurred', 'An error occurred. Please try again.'),
-          'warning'
-        );
-        return;
-      }
-      modals.closeAll();
-      window.location.reload();
-    },
-    [t]
-  );
+  const submit = async (values: { name: string }) => {
+    const response = await fetch('/user/organizations', {
+      method: 'POST',
+      body: JSON.stringify(values),
+    });
+    if (!response.ok) {
+      const { message } = await response.json().catch(() => ({} as any));
+      toast.show(
+        (Array.isArray(message) ? message[0] : message) ||
+          t(
+            'could_not_create_organization',
+            'Could not create the organization'
+          ),
+        'warning'
+      );
+      return;
+    }
+    const { id } = await response.json();
+    if (!(await switchOrg(fetch, id))) {
+      toast.show(
+        t('error_occurred', 'An error occurred. Please try again.'),
+        'warning'
+      );
+      return;
+    }
+  };
 
   return (
     <FormProvider {...form}>
@@ -117,11 +119,8 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
       ?.filter((d: any) => d.id !== user?.orgId)
       .sort((a: any, b: any) => Number(b.isPersonal) - Number(a.isPersonal));
   }, [current, data]);
-  const orgName = useCallback(
-    (org: { name: string; isPersonal?: boolean }) =>
-      org.isPersonal ? t('personal_organization', 'Personal') : org.name,
-    [t]
-  );
+  const orgName = (org: { name: string; isPersonal?: boolean }) =>
+    org.isPersonal ? t('personal_organization', 'Personal') : org.name;
   const createOrg = useCallback(() => {
     modals.openModal({
       classNames: {
@@ -134,13 +133,7 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
   }, [t]);
   const changeOrg = useCallback(
     (org: { name: string; id: string }) => async () => {
-      await fetch('/user/change-org', {
-        method: 'POST',
-        body: JSON.stringify({
-          id: org.id,
-        }),
-      });
-      window.location.reload();
+      await switchOrg(fetch, org.id);
     },
     []
   );

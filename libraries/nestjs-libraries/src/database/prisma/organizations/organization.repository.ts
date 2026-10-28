@@ -41,8 +41,7 @@ export class OrganizationRepository {
       : `${saasName}+` + makeId(10) + '@postiz.com';
     const userName = name ? `${name}###${id}` : `Unnamed User###${id}`;
     const data: Prisma.OrganizationCreateInput = {
-      name: userName,
-      apiKey: AuthService.fixedEncryption(makeSecureId(20)),
+      ...this.orgData(userName),
       isTrailing: false,
       subscription: {
         create: {
@@ -624,19 +623,20 @@ export class OrganizationRepository {
     });
   }
 
-  createOrganization(userId: string, name: string) {
-    return this.createWithOwner(
-      this._organization.model,
-      { ...this.orgData(name), allowTrial: false, isTrailing: false },
-      userId
-    );
-  }
-
   private createPersonalOrg(
     tx: Pick<Prisma.TransactionClient, 'organization'>,
     userId: string
   ) {
     return this.createWithOwner(tx, this.personalOrgData(userId), userId);
+  }
+
+  createOrganization(userId: string, name: string) {
+    return this.createWithOwner(
+      this._organization.model,
+      // additional organizations get no trial, the Personal one carries the trial flags
+      this.orgData(name),
+      userId
+    );
   }
 
   createUserWithPersonalOrg(
