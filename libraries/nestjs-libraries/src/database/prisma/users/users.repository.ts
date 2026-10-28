@@ -19,6 +19,7 @@ export class UsersRepository {
     private _userEmail: PrismaRepository<'userEmail'>,
     private _userIdentity: PrismaRepository<'userIdentity'>,
     private _userOrg: PrismaRepository<'userOrganization'>,
+    private _organization: PrismaRepository<'organization'>,
     private _transaction: PrismaTransaction
   ) {}
 
@@ -665,6 +666,15 @@ export class UsersRepository {
           data: { userId: targetId },
         }),
         ...memberships,
+        // the Personal org moves with its membership but stops being personal,
+        // so the target keeps a single one
+        this._organization.model.organization.updateMany({
+          where: { personalUserId: source.id },
+          data: {
+            personalUserId: null,
+            name: `Personal (${source.email})`,
+          },
+        }),
         this._user.model.user.update({
           where: { id: source.id },
           data: this.deletedUserData(source),

@@ -108,7 +108,7 @@ async function start() {
     }
   } catch (e) {
     Logger.error(
-      'Account backfill failed, run "pnpm run prisma-db-push" before starting this version',
+      'Account backfill failed, make sure "pnpm run prisma-db-push" ran before starting this version',
       e
     );
     // Sentry's unhandled-rejection handler would otherwise keep a half-started process alive
