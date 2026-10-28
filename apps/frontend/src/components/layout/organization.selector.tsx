@@ -13,6 +13,7 @@ import { Button } from '@gitroom/react/form/button';
 import { Input } from '@gitroom/react/form/input';
 import { CreateOrganizationDto } from '@gitroom/nestjs-libraries/dtos/settings/create.organization.dto';
 import clsx from 'clsx';
+import { usePathname, useRouter } from 'next/navigation';
 
 const CreateOrganization: FC = () => {
   const fetch = useFetch();
@@ -93,6 +94,8 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
   const user = useUser();
   const t = useT();
   const modals = useModals();
+  const router = useRouter();
+  const allMode = usePathname().startsWith('/launches/all');
   const load = useCallback(async () => {
     return await (await fetch('/user/organizations')).json();
   }, []);
@@ -109,9 +112,9 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
   const withoutCurrent = useMemo(() => {
     // Array.sort is stable, so the other organizations keep the received order
     return data
-      ?.filter((d: any) => d.id !== user?.orgId)
+      ?.filter((d: any) => allMode || d.id !== user?.orgId)
       .sort((a: any, b: any) => Number(b.isPersonal) - Number(a.isPersonal));
-  }, [current, data]);
+  }, [current, data, allMode]);
   const orgName = (org: { name: string; isPersonal?: boolean }) =>
     org.isPersonal ? t('personal_organization', 'Personal') : org.name;
   const createOrg = useCallback(() => {
@@ -132,9 +135,13 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
           id: org.id,
         }),
       });
+      if (allMode) {
+        window.location.href = '/launches';
+        return;
+      }
       window.location.reload();
     },
-    []
+    [allMode]
   );
   if (isLoading || !data?.length) {
     return null;
@@ -167,9 +174,11 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
                   fill="currentColor"
                 />
               </svg>
-              {!!current?.name && (
+              {(allMode || !!current?.name) && (
                 <div className="max-w-[240px] truncate mobile:hidden">
-                  {orgName(current)}
+                  {allMode
+                    ? t('all_organizations', 'All Orgs')
+                    : orgName(current)}
                 </div>
               )}
             </div>
@@ -182,6 +191,17 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
                 : ''
             )}
           >
+            {!asOpenSelect &&
+              !user?.impersonate &&
+              !allMode &&
+              data.length > 1 && (
+                <div
+                  onClick={() => router.push('/launches/all')}
+                  className="whitespace-nowrap truncate"
+                >
+                  {t('all_organizations', 'All Orgs')}
+                </div>
+              )}
             {withoutCurrent?.map(
               (org: {
                 name: string;

@@ -909,6 +909,8 @@
   "media_settings_section_tooltip": "缩略图适用于主帖中的视频，并会发送到每个支持缩略图的频道。YouTube 可能会对被视为 Shorts（竖屏、时长不超过 3 分钟）的视频忽略缩略图，但不会导致发布失败，并且自定义缩略图需要经过手机验证的频道。如果 YouTube 拒绝了缩略图，视频仍将发布，且 Postiz 无法提前检查其资格。",
   "youtube_thumbnail_overrides_media": "该帖子有专门针对 YouTube 的缩略图，会覆盖在媒体设置中设定的缩略图。",
   "personal_organization": "个人",
+  "all_organizations": "所有组织",
+  "all_organizations_read_only": "所有组织的只读视图",
   "create_organization": "创建组织",
   "organization_name": "组织名称",
   "enter_organization_name": "输入组织名称",

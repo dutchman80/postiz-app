@@ -441,11 +441,13 @@ export const Filters = () => {
       )}
       {/* phones get a single filter button that opens the filters sheet */}
       <div className="contents mobile:hidden">
-        <SelectCustomer
-          customer={calendar.customer as string}
-          onChange={(customer: string) => setCustomer(customer)}
-          integrations={calendar.integrations}
-        />
+        {!calendar.readOnly && (
+          <SelectCustomer
+            customer={calendar.customer as string}
+            onChange={(customer: string) => setCustomer(customer)}
+            integrations={calendar.integrations}
+          />
+        )}
         <SelectChannels />
       </div>
       {calendar.integrations.length > 1 && (
@@ -498,17 +500,24 @@ export const Filters = () => {
           {t('month', 'Month')}
         </div>
         {/* the list toggle joins the view switcher on phones */}
-        <div
-          className={clsx(
-            'hidden mobile:block pt-[6px] pb-[5px] cursor-pointer mobile:flex-1 mobile:min-w-fit mobile:px-[6px] mobile:whitespace-nowrap text-center rounded-[6px]',
-            isListView && 'text-textItemFocused bg-boxFocused'
-          )}
-          onClick={setList}
-        >
-          {t('list', 'List')}
-        </div>
+        {!calendar.readOnly && (
+          <div
+            className={clsx(
+              'hidden mobile:block pt-[6px] pb-[5px] cursor-pointer mobile:flex-1 mobile:min-w-fit mobile:px-[6px] mobile:whitespace-nowrap text-center rounded-[6px]',
+              isListView && 'text-textItemFocused bg-boxFocused'
+            )}
+            onClick={setList}
+          >
+            {t('list', 'List')}
+          </div>
+        )}
       </div>
-      <div className="flex flex-row p-[4px] border border-newTableBorder rounded-[8px] text-[14px] font-[500] mobile:hidden">
+      <div
+        className={clsx(
+          'flex flex-row p-[4px] border border-newTableBorder rounded-[8px] text-[14px] font-[500] mobile:hidden',
+          calendar.readOnly && '!hidden'
+        )}
+      >
         <div
           onClick={setCalendarView}
           className={clsx(
@@ -567,12 +576,14 @@ export const Filters = () => {
             onClick: () => setFiltersOpen(false),
           }}
         >
-          <SelectCustomer
-            list={true}
-            customer={calendar.customer as string}
-            onChange={(customer: string) => setCustomer(customer)}
-            integrations={calendar.integrations}
-          />
+          {!calendar.readOnly && (
+            <SelectCustomer
+              list={true}
+              customer={calendar.customer as string}
+              onChange={(customer: string) => setCustomer(customer)}
+              integrations={calendar.integrations}
+            />
+          )}
           <SelectChannels list={true} />
         </BottomSheet>
       )}

@@ -419,7 +419,7 @@ const DaySlotColumn: FC<{ option: any[]; startDate: string }> = memo(
 
 export const DayView = () => {
   const calendar = useCalendar();
-  const { integrations, posts, postDates, startDate } = calendar;
+  const { integrations, posts, postDates, startDate, readOnly } = calendar;
 
   // Set dayjs locale based on current language
   const currentLanguage = i18next.resolvedLanguage || 'en';
@@ -454,7 +454,7 @@ export const DayView = () => {
         groupBy(
           [
             ...createdPosts,
-            ...integrations.flatMap((p) =>
+            ...(readOnly ? [] : integrations).flatMap((p) =>
               p.time.flatMap((t) => ({
                 integration: p,
                 identifier: p?.identifier,
@@ -470,7 +470,7 @@ export const DayView = () => {
       ),
       (p) => p[0].time
     );
-  }, [integrations, posts, postDates, startDate]);
+  }, [integrations, posts, postDates, startDate, readOnly]);
 
   // the now line goes right before the first upcoming slot, only on today
   const now = useNow();
@@ -786,6 +786,7 @@ export const CalendarColumn: FC<{
     signature,
     loading,
     currentHour,
+    readOnly,
   } = useCalendar();
   const modal = useModals();
   const fetch = useFetch();
@@ -830,8 +831,9 @@ export const CalendarColumn: FC<{
 
   const [{ canDrop }, drop] = useDrop(() => ({
     accept: 'post',
+    canDrop: () => !readOnly,
     drop: async (item: any) => {
-      if (isBeforeNow) return;
+      if (isBeforeNow || readOnly) return;
 
       // Find the post to check its state
       const post = posts.find((p) => p.id === item.id);
@@ -928,7 +930,7 @@ export const CalendarColumn: FC<{
     collect: (monitor) => ({
       canDrop: isBeforeNow ? false : !!monitor.canDrop() && !!monitor.isOver(),
     }),
-  }), [posts, isBeforeNow]);
+  }), [posts, isBeforeNow, readOnly]);
 
   const addModal = useCallback(async () => {
     const set: any = !sets.length
@@ -1074,15 +1076,21 @@ export const CalendarColumn: FC<{
                   isBeforeNow={isBeforeNow}
                   date={getDate}
                   state={post.state}
-                  statistics={openStatistics(post.id)}
-                  missingRelease={openMissingRelease(post.id)}
-                  openPost={openPost(post)}
-                  editPost={editPost(post, false)}
-                  duplicatePost={editPost(post, true)}
-                  copyDebugJson={user?.isSuperAdmin ? copyDebugJson(post) : undefined}
+                  statistics={readOnly ? undefined : openStatistics(post.id)}
+                  missingRelease={
+                    readOnly ? undefined : openMissingRelease(post.id)
+                  }
+                  openPost={readOnly ? undefined : openPost(post)}
+                  editPost={readOnly ? undefined : editPost(post, false)}
+                  duplicatePost={readOnly ? undefined : editPost(post, true)}
+                  copyDebugJson={
+                    !readOnly && user?.isSuperAdmin
+                      ? copyDebugJson(post)
+                      : undefined
+                  }
                   post={post}
                   integrations={integrations}
-                  deletePost={deletePost(post)}
+                  deletePost={readOnly ? undefined : deletePost(post)}
                 />
               </div>
             </div>
@@ -1116,7 +1124,7 @@ export const CalendarColumn: FC<{
             </div>
           )}
         </div>
-        {!isBeforeNow && (
+        {!isBeforeNow && !readOnly && (
           <div
             className="pb-[2.5px] px-[5px] flex-1 flex"
             onClick={integrations.length ? addModal : addProvider}
@@ -1196,13 +1204,13 @@ export const CalendarColumn: FC<{
 const CalendarItem: FC<{
   date: dayjs.Dayjs;
   isBeforeNow: boolean;
-  editPost: () => void;
-  duplicatePost: () => void;
+  editPost?: () => void;
+  duplicatePost?: () => void;
   copyDebugJson?: () => void;
-  deletePost: () => void;
-  statistics: () => void;
+  deletePost?: () => void;
+  statistics?: () => void;
   missingRelease?: () => void;
-  openPost: () => void;
+  openPost?: () => void;
   integrations: Integrations[];
   state: State;
   display: 'day' | 'week' | 'month';
@@ -1229,9 +1237,14 @@ const CalendarItem: FC<{
     showTime,
     missingRelease,
     openPost,
+    integrations,
   } = props;
   const { disableXAnalytics } = useVariables();
   const user = useUser();
+  const { readOnly } = useCalendar();
+  const orgName = readOnly
+    ? integrations.find((i) => i.id === post.integration.id)?.organization?.name
+    : undefined;
   const showCreationMethodBadge =
     user?.impersonate &&
     post.creationMethod &&
@@ -1247,11 +1260,12 @@ const CalendarItem: FC<{
         interval: !!post.intervalInDays,
         date,
       },
+      canDrag: !readOnly,
       collect: (monitor) => ({
         opacity: monitor.isDragging() ? 0 : 1,
       }),
     }),
-    []
+    [readOnly]
   );
   return (
     <div
@@ -1310,10 +1324,18 @@ const CalendarItem: FC<{
         <div
           className={clsx(
             post?.tags?.[0]?.tag?.color ? 'text-shadow-tags' : '',
-            'group-hover:hidden cursor-pointer'
+            !readOnly && 'group-hover:hidden cursor-pointer'
           )}
         >
-          {post.tags.map((p) => p.tag.name).join(', ')}
+          {readOnly ? (
+            <>
+              <span className="font-[600] truncate">{orgName}</span>
+              {!!post.tags.length && ' · '}
+              {post.tags.map((p) => p.tag.name).join(' · ')}
+            </>
+          ) : (
+            post.tags.map((p) => p.tag.name).join(', ')
+          )}
         </div>
         {copyDebugJson && (
           <div
@@ -1326,7 +1348,8 @@ const CalendarItem: FC<{
             <CopyDebug />
           </div>
         )}
-        {(state === 'PUBLISHED' || state === 'ERROR') &&
+        {openPost &&
+          (state === 'PUBLISHED' || state === 'ERROR') &&
           !post.intervalInDays &&
           post.releaseURL?.startsWith('http') && (
             <div
@@ -1351,7 +1374,7 @@ const CalendarItem: FC<{
           >
             <Statistics />
           </div>
-        ) : post.releaseId !== 'missing' ? (
+        ) : post.releaseId !== 'missing' && statistics ? (
           <div
             className={clsx(
               'hidden group-hover:block hover:underline cursor-pointer',
@@ -1364,36 +1387,45 @@ const CalendarItem: FC<{
         ) : (
           <></>
         )}{' '}
-        <div
-          className={clsx(
-            'hidden group-hover:block hover:underline cursor-pointer',
-            post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
-          )}
-          onClick={preview}
-        >
-          <Preview />
-        </div>
-        <div
-          className={clsx(
-            'hidden group-hover:block hover:underline cursor-pointer',
-            post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
-          )}
-          onClick={duplicatePost}
-        >
-          <Duplicate />
-        </div>
-        <div
-          className={clsx(
-            'hidden group-hover:block hover:underline cursor-pointer text-red-500',
-            post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
-          )}
-          onClick={deletePost}
-        >
-          <DeletePost />
-        </div>
+        {!readOnly && (
+          <div
+            className={clsx(
+              'hidden group-hover:block hover:underline cursor-pointer',
+              post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
+            )}
+            onClick={preview}
+          >
+            <Preview />
+          </div>
+        )}
+        {duplicatePost && (
+          <div
+            className={clsx(
+              'hidden group-hover:block hover:underline cursor-pointer',
+              post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
+            )}
+            onClick={duplicatePost}
+          >
+            <Duplicate />
+          </div>
+        )}
+        {deletePost && (
+          <div
+            className={clsx(
+              'hidden group-hover:block hover:underline cursor-pointer text-red-500',
+              post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
+            )}
+            onClick={deletePost}
+          >
+            <DeletePost />
+          </div>
+        )}
       </div>
       <div
         onClick={editPost}
+        {...(orgName
+          ? { 'data-tooltip-id': 'tooltip', 'data-tooltip-content': orgName }
+          : {})}
         className={clsx(
           'gap-[5px] w-full flex h-full flex-1 rounded-br-[10px] rounded-bl-[10px] p-[8px] text-[14px] bg-newColColor',
           'relative',
