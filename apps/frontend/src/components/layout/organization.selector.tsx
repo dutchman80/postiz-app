@@ -1,6 +1,6 @@
 'use client';
 
-import React, { FC, useCallback, useMemo } from 'react';
+import React, { FC, useCallback, useMemo, useState } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
 import { classValidatorResolver } from '@hookform/resolvers/class-validator';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
@@ -14,21 +14,10 @@ import { Input } from '@gitroom/react/form/input';
 import { CreateOrganizationDto } from '@gitroom/nestjs-libraries/dtos/settings/create.organization.dto';
 import clsx from 'clsx';
 
-const switchOrg = async (fetch: ReturnType<typeof useFetch>, id: string) => {
-  const response = await fetch('/user/change-org', {
-    method: 'POST',
-    body: JSON.stringify({ id }),
-  });
-  if (!response.ok) {
-    return false;
-  }
-  window.location.reload();
-  return true;
-};
-
 const CreateOrganization: FC = () => {
   const fetch = useFetch();
   const toast = useToaster();
+  const [created, setCreated] = useState(false);
   const t = useT();
   const resolver = useMemo(() => {
     return classValidatorResolver(CreateOrganizationDto);
@@ -67,6 +56,7 @@ const CreateOrganization: FC = () => {
       );
       return;
     }
+    setCreated(true);
     window.location.reload();
   };
 
@@ -86,7 +76,7 @@ const CreateOrganization: FC = () => {
           <Button
             type="submit"
             loading={form.formState.isSubmitting}
-            disabled={form.formState.isSubmitting}
+            disabled={form.formState.isSubmitting || created}
             className="mt-[18px]"
           >
             {t('create_organization', 'Create organization')}
@@ -136,7 +126,13 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
   }, [t]);
   const changeOrg = useCallback(
     (org: { name: string; id: string }) => async () => {
-      await switchOrg(fetch, org.id);
+      await fetch('/user/change-org', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: org.id,
+        }),
+      });
+      window.location.reload();
     },
     []
   );
@@ -216,7 +212,11 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
             )}
             <div
               onClick={createOrg}
-              className="whitespace-nowrap truncate border-t border-tableBorder pt-[12px]"
+              className={clsx(
+                'whitespace-nowrap truncate',
+                !!withoutCurrent?.length &&
+                  'border-t border-tableBorder pt-[12px]'
+              )}
             >
               {t('create_organization', 'Create organization')}
             </div>

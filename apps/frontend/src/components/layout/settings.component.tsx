@@ -179,12 +179,11 @@ export const SettingsPopup: FC<{
                   <GlobalSettings />
                 </div>
               )}
-              {tab === 'teams' &&
-                !!canSeeTeams && (
-                  <div>
-                    <TeamsComponent />
-                  </div>
-                )}
+              {tab === 'teams' && !!canSeeTeams && (
+                <div>
+                  <TeamsComponent />
+                </div>
+              )}
 
               {tab === 'webhooks' && !!user?.tier?.webhooks && (
                 <div>
