@@ -29,8 +29,18 @@ export class AllOrgsController {
   ) {
     // Aggregate path only; the shared getPosts path is unbounded, see issue #13.
     // 45 days = longest calendar month view (31 days) plus margin.
-    if (dayjs(query.endDate).diff(dayjs(query.startDate), 'day', true) > 45) {
-      throw new HttpException('Date range too large', 400);
+    const start = dayjs(query.startDate);
+    const end = dayjs(query.endDate);
+    if (
+      !start.isValid() ||
+      !end.isValid() ||
+      end.isBefore(start) ||
+      end.diff(start, 'day', true) > 45 ||
+      // Safety bound for the aggregate route while issue #13 tracks the
+      // recurring-post expansion.
+      end.isAfter(dayjs().add(2, 'year'))
+    ) {
+      throw new HttpException('Invalid date range', 400);
     }
     return this._postsService.getPostsForOrganizationsMinified(orgIds, query);
   }
