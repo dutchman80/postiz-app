@@ -193,7 +193,8 @@ export const CalendarWeekProvider: FC<{
   );
   // the list view only exists for one organization, so All Orgs shows the week
   const savedOrParam = searchParams.get('display') || displaySaved;
-  const display = readOnly && savedOrParam === 'list' ? 'week' : savedOrParam;
+  const listCoerced = readOnly && savedOrParam === 'list';
+  const display = listCoerced ? 'week' : savedOrParam;
 
   // List view state
   const [listPage, setListPage] = useState(0);
@@ -209,9 +210,12 @@ export const CalendarWeekProvider: FC<{
   // no customer picker in read-only mode, so ignore a stale ?customer=
   const initCustomer = readOnly ? null : searchParams.get('customer');
 
+  // list URLs carry a one-day range, so the week is recomputed around that day
   const initialRange =
     initStartDate && initEndDate
-      ? { startDate: initStartDate, endDate: initEndDate }
+      ? listCoerced
+        ? getDateRange('week', initStartDate)
+        : { startDate: initStartDate, endDate: initEndDate }
       : getDateRange(display);
 
   const [selectedChannels, setSelectedChannelsRaw] = useState<
@@ -339,7 +343,10 @@ export const CalendarWeekProvider: FC<{
       display: 'week' | 'month' | 'day' | 'list';
       customer: string | null;
     }) => {
-      setDisplaySaved(newFilters.display);
+      // the read-only calendar must not overwrite the saved normal calendar view
+      if (!readOnly) {
+        setDisplaySaved(newFilters.display);
+      }
       setFilters(newFilters);
       setInternalData([]);
 
@@ -356,7 +363,7 @@ export const CalendarWeekProvider: FC<{
       ].filter((f) => f);
       window.history.replaceState(null, '', `${pathname}?${path.join('&')}`);
     },
-    [pathname]
+    [pathname, readOnly]
   );
 
   const filterByChannels = useCallback(
