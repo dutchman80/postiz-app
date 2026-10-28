@@ -586,24 +586,31 @@ export class OrganizationRepository {
     });
   }
 
-  // every user owns exactly one Personal organization, personalUserId is unique
   private orgData(name: string) {
     return {
       name,
       apiKey: AuthService.fixedEncryption(makeSecureId(20)),
-      allowTrial: true,
-      isTrailing: true,
     };
   }
 
+  // every user owns exactly one Personal organization, personalUserId is unique
   private personalOrgData(userId: string) {
-    return { ...this.orgData('Personal'), personalUserId: userId };
+    return {
+      ...this.orgData('Personal'),
+      allowTrial: true,
+      isTrailing: true,
+      personalUserId: userId,
+    };
   }
 
-  createOrganization(userId: string, name: string) {
-    return this._organization.model.organization.create({
+  private createWithOwner(
+    client: Pick<Prisma.TransactionClient, 'organization'>,
+    data: Omit<Prisma.OrganizationUncheckedCreateInput, 'users'>,
+    userId: string
+  ) {
+    return client.organization.create({
       data: {
-        ...this.orgData(name),
+        ...data,
         users: {
           create: {
             role: Role.SUPERADMIN,
@@ -615,26 +622,21 @@ export class OrganizationRepository {
         id: true,
       },
     });
+  }
+
+  createOrganization(userId: string, name: string) {
+    return this.createWithOwner(
+      this._organization.model,
+      { ...this.orgData(name), allowTrial: false, isTrailing: false },
+      userId
+    );
   }
 
   private createPersonalOrg(
     tx: Pick<Prisma.TransactionClient, 'organization'>,
     userId: string
   ) {
-    return tx.organization.create({
-      data: {
-        ...this.personalOrgData(userId),
-        users: {
-          create: {
-            role: Role.SUPERADMIN,
-            userId,
-          },
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
+    return this.createWithOwner(tx, this.personalOrgData(userId), userId);
   }
 
   createUserWithPersonalOrg(

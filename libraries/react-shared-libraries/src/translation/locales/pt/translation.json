@@ -908,9 +908,9 @@
   "media_settings_section_description": "Clique em um item de mídia para definir seu texto alternativo ou sua miniatura, se for um vídeo.",
   "media_settings_section_tooltip": "As miniaturas se aplicam aos vídeos na postagem principal e são enviadas para todos os canais que as suportam. O YouTube pode ignorá-las em vídeos que considera Shorts (verticais, de até 3 minutos) sem impedir a publicação, e exige um canal verificado por telefone para miniaturas personalizadas. Se o YouTube rejeitar a miniatura, o vídeo ainda será publicado e o Postiz não pode verificar a elegibilidade com antecedência.",
   "youtube_thumbnail_overrides_media": "Esta publicação possui uma miniatura específica do YouTube, que substitui a miniatura definida nas configurações de mídia.",
-  "personal_organization": "Personal",
-  "create_organization": "Create organization",
-  "organization_name": "Organization name",
-  "enter_organization_name": "Enter organization name",
-  "could_not_create_organization": "Could not create the organization"
+  "personal_organization": "Pessoal",
+  "create_organization": "Criar organização",
+  "organization_name": "Nome da organização",
+  "enter_organization_name": "Insira o nome da organização",
+  "could_not_create_organization": "Não foi possível criar a organização"
 }

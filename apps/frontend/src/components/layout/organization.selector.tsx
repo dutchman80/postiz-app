@@ -18,6 +18,7 @@ const CreateOrganization: FC = () => {
   const fetch = useFetch();
   const toast = useToaster();
   const t = useT();
+  const modals = useModals();
   const resolver = useMemo(() => {
     return classValidatorResolver(CreateOrganizationDto);
   }, []);
@@ -48,10 +49,18 @@ const CreateOrganization: FC = () => {
         return;
       }
       const { id } = await response.json();
-      await fetch('/user/change-org', {
+      const changed = await fetch('/user/change-org', {
         method: 'POST',
         body: JSON.stringify({ id }),
       });
+      if (!changed.ok) {
+        toast.show(
+          t('error_occurred', 'An error occurred. Please try again.'),
+          'warning'
+        );
+        return;
+      }
+      modals.closeAll();
       window.location.reload();
     },
     [t]
@@ -70,7 +79,11 @@ const CreateOrganization: FC = () => {
             )}
             name="name"
           />
-          <Button type="submit" className="mt-[18px]">
+          <Button
+            type="submit"
+            loading={form.formState.isSubmitting}
+            className="mt-[18px]"
+          >
             {t('create_organization', 'Create organization')}
           </Button>
         </div>
@@ -169,48 +182,49 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
               )}
             </div>
           )}
-          {
+          <div
+            className={clsx(
+              'hidden py-[12px] px-[12px] group-hover:flex absolute top-[100%] end-0 w-max max-w-[400px] bg-third border-tableBorder border gap-[12px] cursor-pointer flex-col',
+              asOpenSelect
+                ? '!flex !relative max-w-[500px] mx-auto mb-[10px]'
+                : ''
+            )}
+          >
+            {withoutCurrent?.map(
+              (org: {
+                name: string;
+                id: string;
+                isPersonal?: boolean;
+                users: { role: 'SUPERADMIN' | 'ADMIN' | 'USER' }[];
+              }) => (
+                <div
+                  key={org?.id}
+                  onClick={changeOrg(org)}
+                  className="whitespace-nowrap truncate"
+                >
+                  {orgName(org)}
+                  {!!org?.users?.[0]?.role && (
+                    <span className="text-customColor18">
+                      {' '}
+                      (
+                      {org?.users?.[0]?.role === 'SUPERADMIN'
+                        ? 'Super-Admin'
+                        : org?.users?.[0]?.role === 'ADMIN'
+                        ? 'Admin'
+                        : 'User'}
+                      )
+                    </span>
+                  )}
+                </div>
+              )
+            )}
             <div
-              className={clsx(
-                'hidden py-[12px] px-[12px] group-hover:flex absolute top-[100%] end-0 w-max max-w-[400px] bg-third border-tableBorder border gap-[12px] cursor-pointer flex-col',
-                asOpenSelect
-                  ? '!flex !relative max-w-[500px] mx-auto mb-[10px]'
-                  : ''
-              )}
+              onClick={createOrg}
+              className="whitespace-nowrap truncate border-t border-tableBorder pt-[12px]"
             >
-              {withoutCurrent?.map(
-                (org: {
-                  name: string;
-                  id: string;
-                  isPersonal?: boolean;
-                  users: { role: 'SUPERADMIN' | 'ADMIN' | 'USER' }[];
-                }) => (
-                  <div
-                    key={org?.id}
-                    onClick={changeOrg(org)}
-                    className="whitespace-nowrap truncate"
-                  >
-                    {orgName(org)}
-                    {!!org?.users?.[0]?.role && (
-                      <span className="text-customColor18">
-                        {' '}
-                        (
-                        {org?.users?.[0]?.role === 'SUPERADMIN'
-                          ? 'Super-Admin'
-                          : org?.users?.[0]?.role === 'ADMIN'
-                          ? 'Admin'
-                          : 'User'}
-                        )
-                      </span>
-                    )}
-                  </div>
-                )
-              )}
-              <div onClick={createOrg} className="whitespace-nowrap truncate">
-                {t('create_organization', 'Create organization')}
-              </div>
+              {t('create_organization', 'Create organization')}
             </div>
-          }
+          </div>
         </div>
       </div>
       {!asOpenSelect && (

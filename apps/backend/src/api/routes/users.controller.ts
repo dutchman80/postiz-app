@@ -351,11 +351,22 @@ export class UsersController {
       }));
   }
 
+  @UseGuards(ThrottlerRealIpGuard)
+  @Throttle({ default: { limit: 10, ttl: 3600000 } })
   @Post('/organizations')
   createOrg(
     @GetUserFromRequest() user: User,
+    @Req() req: Request,
     @Body() body: CreateOrganizationDto
   ) {
+    const impersonate = req.cookies.impersonate || req.headers.impersonate;
+    if (impersonate) {
+      throw new HttpException(
+        'Organization cannot be created while impersonating',
+        400
+      );
+    }
+
     return this._orgService.createOrganization(user.id, body.name);
   }
 
