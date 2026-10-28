@@ -42,10 +42,19 @@ const CreateOrganization: FC = () => {
   });
 
   const submit = async (values: { name: string }) => {
-    const response = await fetch('/user/organizations', {
-      method: 'POST',
-      body: JSON.stringify(values),
-    });
+    let response: Response;
+    try {
+      response = await fetch('/user/organizations', {
+        method: 'POST',
+        body: JSON.stringify(values),
+      });
+    } catch {
+      toast.show(
+        t('could_not_create_organization', 'Could not create the organization'),
+        'warning'
+      );
+      return;
+    }
     if (!response.ok) {
       const { message } = await response.json().catch(() => ({} as any));
       toast.show(
@@ -77,6 +86,7 @@ const CreateOrganization: FC = () => {
           <Button
             type="submit"
             loading={form.formState.isSubmitting}
+            disabled={form.formState.isSubmitting}
             className="mt-[18px]"
           >
             {t('create_organization', 'Create organization')}
