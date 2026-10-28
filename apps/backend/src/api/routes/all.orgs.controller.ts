@@ -33,6 +33,17 @@ export class AllOrgsController {
     }
   }
 
+  private parseDate(value: string) {
+    const day = value.slice(0, 10);
+    const date = dayjs.utc(value);
+    const calendarDay = dayjs.utc(day);
+    return date.isValid() &&
+      calendarDay.isValid() &&
+      calendarDay.format('YYYY-MM-DD') === day
+      ? date
+      : null;
+  }
+
   @Get('/posts')
   async getPosts(
     @GetOrgIdsFromRequest() orgIds: string[],
@@ -42,15 +53,11 @@ export class AllOrgsController {
     // Aggregate path only; the shared getPosts path is unbounded, see issue #13.
     // 45 days = longest calendar month view (31 days) plus margin.
     // Parse each input once. dayjs rolls impossible dates over (2026-02-30
-    // becomes 2026-03-02), so compare the date part back against the input.
-    const start = dayjs.utc(query.startDate);
-    const end = dayjs.utc(query.endDate);
-    if (
-      !start.isValid() ||
-      !end.isValid() ||
-      start.format('YYYY-MM-DD') !== query.startDate.slice(0, 10) ||
-      end.format('YYYY-MM-DD') !== query.endDate.slice(0, 10)
-    ) {
+    // becomes 2026-03-02), so the calendar part is validated on its own,
+    // independent of the UTC instant (an offset can move that to another day).
+    const start = this.parseDate(query.startDate);
+    const end = this.parseDate(query.endDate);
+    if (!start || !end) {
       throw new HttpException('Invalid date range', 400);
     }
     if (
