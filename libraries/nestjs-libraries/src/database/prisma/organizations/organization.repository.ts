@@ -644,6 +644,7 @@ export class OrganizationRepository {
       select: {
         id: true,
       },
+      orderBy: { id: 'asc' },
     });
 
     let created = 0;

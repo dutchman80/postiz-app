@@ -590,7 +590,7 @@ export class UsersRepository {
     // side nothing happens here, the next boot backfill creates it
     let targetHasPersonal =
       !!(await this._organization.model.organization.findFirst({
-        where: { personalUserId: targetId, deletedAt: null },
+        where: { personalUserId: targetId },
         select: { id: true },
       }));
     for (const source of sources) {
