@@ -911,6 +911,8 @@
   "media_settings_section_tooltip": "Thumbnails apply to videos in the main post and are sent to every channel that supports them. YouTube may ignore them on videos it treats as Shorts (vertical, up to 3 minutes) without failing the publish, and requires a phone-verified channel for custom thumbnails. If YouTube rejects the thumbnail the video is still published, and Postiz cannot check eligibility in advance.",
   "youtube_thumbnail_overrides_media": "This post has a YouTube-specific thumbnail, which overrides the thumbnail set in the media settings.",
   "personal_organization": "Personal",
+  "all_organizations": "All Orgs",
+  "all_organizations_read_only": "Read-only view of all your organizations",
   "create_organization": "Create organization",
   "organization_name": "Organization name",
   "enter_organization_name": "Enter organization name",

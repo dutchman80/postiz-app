@@ -62,6 +62,7 @@ import {
 } from '@gitroom/frontend/components/layout/set.timezone';
 import { Button } from '@gitroom/react/form/button';
 import { ChevronUpIcon } from '@gitroom/frontend/components/ui/icons';
+import { orgDisplayName } from '@gitroom/frontend/components/layout/organization.selector';
 
 // Extend dayjs with necessary plugins
 extend(isSameOrAfter);
@@ -419,7 +420,7 @@ const DaySlotColumn: FC<{ option: any[]; startDate: string }> = memo(
 
 export const DayView = () => {
   const calendar = useCalendar();
-  const { integrations, posts, postDates, startDate } = calendar;
+  const { integrations, posts, postDates, startDate, readOnly } = calendar;
 
   // Set dayjs locale based on current language
   const currentLanguage = i18next.resolvedLanguage || 'en';
@@ -454,7 +455,7 @@ export const DayView = () => {
         groupBy(
           [
             ...createdPosts,
-            ...integrations.flatMap((p) =>
+            ...(readOnly ? [] : integrations).flatMap((p) =>
               p.time.flatMap((t) => ({
                 integration: p,
                 identifier: p?.identifier,
@@ -470,7 +471,7 @@ export const DayView = () => {
       ),
       (p) => p[0].time
     );
-  }, [integrations, posts, postDates, startDate]);
+  }, [integrations, posts, postDates, startDate, readOnly]);
 
   // the now line goes right before the first upcoming slot, only on today
   const now = useNow();
@@ -786,6 +787,7 @@ export const CalendarColumn: FC<{
     signature,
     loading,
     currentHour,
+    readOnly,
   } = useCalendar();
   const modal = useModals();
   const fetch = useFetch();
@@ -1045,7 +1047,7 @@ export const CalendarColumn: FC<{
         <div
           className={clsx(
             'flex-col text-[12px] pointer w-full flex scrollbar scrollbar-thumb-tableBorder scrollbar-track-secondary',
-            isBeforeNow ? 'flex-1' : 'cursor-pointer',
+            isBeforeNow ? 'flex-1' : !readOnly && 'cursor-pointer',
             isBeforeNow && postList.length === 0 && 'col-calendar',
             // the "Date passed" hint is wider than a phone month cell
             display === 'month' && 'mobile:before:hidden'
@@ -1116,7 +1118,7 @@ export const CalendarColumn: FC<{
             </div>
           )}
         </div>
-        {!isBeforeNow && (
+        {!isBeforeNow && !readOnly && (
           <div
             className="pb-[2.5px] px-[5px] flex-1 flex"
             onClick={integrations.length ? addModal : addProvider}
@@ -1229,9 +1231,16 @@ const CalendarItem: FC<{
     showTime,
     missingRelease,
     openPost,
+    integrations,
   } = props;
   const { disableXAnalytics } = useVariables();
   const user = useUser();
+  const { readOnly } = useCalendar();
+  const organization = readOnly
+    ? integrations.find((i) => i?.id === post.integration.id)?.organization
+    : undefined;
+  const orgName = organization && orgDisplayName(organization, t);
+  const readOnlyTitle = orgName || post.integration?.name;
   const showCreationMethodBadge =
     user?.impersonate &&
     post.creationMethod &&
@@ -1247,11 +1256,12 @@ const CalendarItem: FC<{
         interval: !!post.intervalInDays,
         date,
       },
+      canDrag: !readOnly,
       collect: (monitor) => ({
         opacity: monitor.isDragging() ? 0 : 1,
       }),
     }),
-    []
+    [readOnly]
   );
   return (
     <div
@@ -1310,90 +1320,105 @@ const CalendarItem: FC<{
         <div
           className={clsx(
             post?.tags?.[0]?.tag?.color ? 'text-shadow-tags' : '',
-            'group-hover:hidden cursor-pointer'
+            readOnly ? 'truncate min-w-0' : 'group-hover:hidden cursor-pointer'
           )}
         >
-          {post.tags.map((p) => p.tag.name).join(', ')}
+          {readOnly ? (
+            <>
+              <span className="font-[600]">{readOnlyTitle}</span>
+              {!!readOnlyTitle && !!post.tags.length && ' · '}
+              {post.tags.map((p) => p.tag.name).join(' · ')}
+            </>
+          ) : (
+            post.tags.map((p) => p.tag.name).join(', ')
+          )}
         </div>
-        {copyDebugJson && (
-          <div
-            className={clsx(
-              'hidden group-hover:block hover:underline cursor-pointer',
-              post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
+        {!readOnly && (
+          <>
+            {copyDebugJson && (
+              <div
+                className={clsx(
+                  'hidden group-hover:block hover:underline cursor-pointer',
+                  post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
+                )}
+                onClick={copyDebugJson}
+              >
+                <CopyDebug />
+              </div>
             )}
-            onClick={copyDebugJson}
-          >
-            <CopyDebug />
-          </div>
-        )}
-        {(state === 'PUBLISHED' || state === 'ERROR') &&
-          !post.intervalInDays &&
-          post.releaseURL?.startsWith('http') && (
+            {(state === 'PUBLISHED' || state === 'ERROR') &&
+              !post.intervalInDays &&
+              post.releaseURL?.startsWith('http') && (
+                <div
+                  className={clsx(
+                    'hidden group-hover:block hover:underline cursor-pointer',
+                    post?.tags?.[0]?.tag?.color && 'mix-blend-difference'
+                  )}
+                  onClick={openPost}
+                >
+                  <OpenPost />
+                </div>
+              )}{' '}
+            {((post.integration.providerIdentifier === 'x' && disableXAnalytics) || !post.releaseId) ? (
+              <></>
+            ) : post.releaseId === 'missing' && missingRelease ? (
+              <div
+                className={clsx(
+                  'hidden group-hover:block hover:underline cursor-pointer',
+                  post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
+                )}
+                onClick={missingRelease}
+              >
+                <Statistics />
+              </div>
+            ) : post.releaseId !== 'missing' ? (
+              <div
+                className={clsx(
+                  'hidden group-hover:block hover:underline cursor-pointer',
+                  post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
+                )}
+                onClick={statistics}
+              >
+                <Statistics />
+              </div>
+            ) : (
+              <></>
+            )}{' '}
             <div
               className={clsx(
                 'hidden group-hover:block hover:underline cursor-pointer',
-                post?.tags?.[0]?.tag?.color && 'mix-blend-difference'
+                post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
               )}
-              onClick={openPost}
+              onClick={preview}
             >
-              <OpenPost />
+              <Preview />
             </div>
-          )}{' '}
-        {((post.integration.providerIdentifier === 'x' && disableXAnalytics) || !post.releaseId) ? (
-          <></>
-        ) : post.releaseId === 'missing' && missingRelease ? (
-          <div
-            className={clsx(
-              'hidden group-hover:block hover:underline cursor-pointer',
-              post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
-            )}
-            onClick={missingRelease}
-          >
-            <Statistics />
-          </div>
-        ) : post.releaseId !== 'missing' ? (
-          <div
-            className={clsx(
-              'hidden group-hover:block hover:underline cursor-pointer',
-              post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
-            )}
-            onClick={statistics}
-          >
-            <Statistics />
-          </div>
-        ) : (
-          <></>
-        )}{' '}
-        <div
-          className={clsx(
-            'hidden group-hover:block hover:underline cursor-pointer',
-            post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
-          )}
-          onClick={preview}
-        >
-          <Preview />
-        </div>
-        <div
-          className={clsx(
-            'hidden group-hover:block hover:underline cursor-pointer',
-            post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
-          )}
-          onClick={duplicatePost}
-        >
-          <Duplicate />
-        </div>
-        <div
-          className={clsx(
-            'hidden group-hover:block hover:underline cursor-pointer text-red-500',
-            post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
-          )}
-          onClick={deletePost}
-        >
-          <DeletePost />
-        </div>
+            <div
+              className={clsx(
+                'hidden group-hover:block hover:underline cursor-pointer',
+                post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
+              )}
+              onClick={duplicatePost}
+            >
+              <Duplicate />
+            </div>
+            <div
+              className={clsx(
+                'hidden group-hover:block hover:underline cursor-pointer text-red-500',
+                post?.tags?.[0]?.tag?.color && 'text-shadow-tags'
+              )}
+              onClick={deletePost}
+            >
+              <DeletePost />
+            </div>
+          </>
+        )}
       </div>
       <div
-        onClick={editPost}
+        onClick={readOnly ? undefined : editPost}
+        {...(orgName
+          ? { 'data-tooltip-id': 'tooltip', 'data-tooltip-content': orgName }
+          : {})}
         className={clsx(
           'gap-[5px] w-full flex h-full flex-1 rounded-br-[10px] rounded-bl-[10px] p-[8px] text-[14px] bg-newColColor',
           'relative',

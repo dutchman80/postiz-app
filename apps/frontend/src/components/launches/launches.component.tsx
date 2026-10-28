@@ -7,7 +7,10 @@ import {
 import { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import SafeImage from '@gitroom/react/helpers/safe.image';
 import { capitalize, groupBy, orderBy } from 'lodash';
-import { CalendarWeekProvider } from '@gitroom/frontend/components/launches/calendar.context';
+import {
+  CalendarWeekProvider,
+  useCalendar,
+} from '@gitroom/frontend/components/launches/calendar.context';
 import { Filters } from '@gitroom/frontend/components/launches/filters';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { LoadingComponent } from '@gitroom/frontend/components/layout/loading';
@@ -34,6 +37,7 @@ import { HubspotInstalled } from '@gitroom/frontend/components/launches/hubspot.
 import { useModals } from '@gitroom/frontend/components/layout/new-modal';
 import { Input } from '@gitroom/react/form/input';
 import { Button } from '@gitroom/react/form/button';
+import { orgDisplayName } from '@gitroom/frontend/components/layout/organization.selector';
 
 export const SVGLine = () => {
   return (
@@ -185,6 +189,7 @@ export const MenuGroupComponent: FC<
     group: {
       id: string;
       name: string;
+      groupKey: string;
       values: Array<
         Integration & {
           identifier: string;
@@ -205,11 +210,13 @@ export const MenuGroupComponent: FC<
     changeItemGroup,
     collapsed,
   } = props;
+  const { readOnly } = useCalendar();
   const t = useT();
   const modals = useModals();
   const toaster = useToaster();
+  const openKey = group.groupKey + '_isOpen';
   const [isOpen, setIsOpen] = useState(
-    !!+(localStorage.getItem(group.name + '_isOpen') || '1')
+    !!+(localStorage.getItem(openKey) || '1')
   );
   const editGroupName = useCallback(
     async (e: any) => {
@@ -239,7 +246,7 @@ export const MenuGroupComponent: FC<
   const changeOpenClose = useCallback(
     (e: any) => {
       setIsOpen(!isOpen);
-      localStorage.setItem(group.name + '_isOpen', isOpen ? '0' : '1');
+      localStorage.setItem(openKey, isOpen ? '0' : '1');
       e.stopPropagation();
     },
     [isOpen]
@@ -262,7 +269,7 @@ export const MenuGroupComponent: FC<
     <div
       className="gap-[16px] flex flex-col relative"
       // @ts-ignore
-      ref={drop}
+      ref={readOnly ? undefined : drop}
     >
       {collectedProps.isOver && (
         <div className="absolute start-0 top-0 w-full h-full pointer-events-none">
@@ -290,7 +297,7 @@ export const MenuGroupComponent: FC<
           >
             {group.name}
           </div>
-          {!collapsed && (
+          {!collapsed && !readOnly && (
             <div
               className="hidden group-hover:block hover:opacity-70"
               onClick={editGroupName}
@@ -341,6 +348,7 @@ export const MenuComponent: FC<
     integration,
     collapsed,
   } = props;
+  const { readOnly } = useCalendar();
   const user = useUser();
   const t = useT();
   const [collected, drag, dragPreview] = useDrag(() => ({
@@ -353,14 +361,15 @@ export const MenuComponent: FC<
     <div
       // @ts-ignore
       ref={dragPreview}
-      {...(integration.refreshNeeded && {
-        onClick: refreshChannel(integration),
-        'data-tooltip-id': 'tooltip',
-        'data-tooltip-content': t(
-          'channel_disconnected_click_to_reconnect',
-          'Channel disconnected, click to reconnect.'
-        ),
-      })}
+      {...(integration.refreshNeeded &&
+        !readOnly && {
+          onClick: refreshChannel(integration),
+          'data-tooltip-id': 'tooltip',
+          'data-tooltip-content': t(
+            'channel_disconnected_click_to_reconnect',
+            'Channel disconnected, click to reconnect.'
+          ),
+        })}
       {...(collapsed
         ? {
             'data-tooltip-id': 'tooltip',
@@ -369,7 +378,7 @@ export const MenuComponent: FC<
         : {})}
       className={clsx(
         'flex gap-[12px] items-center bg-newBgColorInner hover:bg-boxHover group/profile transition-all rounded-e-[8px]',
-        integration.refreshNeeded && 'cursor-pointer'
+        integration.refreshNeeded && !readOnly && 'cursor-pointer'
       )}
     >
       <div
@@ -383,9 +392,14 @@ export const MenuComponent: FC<
         </div>
         {(integration.inBetweenSteps || integration.refreshNeeded) && (
           <div
-            className="absolute start-0 top-0 w-[39px] h-[46px] cursor-pointer"
+            className={clsx(
+              'absolute start-0 top-0 w-[39px] h-[46px]',
+              !readOnly && 'cursor-pointer'
+            )}
             onClick={
-              integration.refreshNeeded
+              readOnly
+                ? undefined
+                : integration.refreshNeeded
                 ? refreshChannel(integration)
                 : continueIntegration(integration)
             }
@@ -422,8 +436,9 @@ export const MenuComponent: FC<
       </div>
       <div
         // @ts-ignore
-        ref={drag}
+        ref={readOnly ? undefined : drag}
         {...(integration.disabled &&
+        !readOnly &&
         totalNonDisabledChannels === user?.totalChannels
           ? {
               'data-tooltip-id': 'tooltip',
@@ -435,29 +450,32 @@ export const MenuComponent: FC<
           : {})}
         role="Handle"
         className={clsx(
-          'group-[.sidebar]:hidden flex-1 whitespace-nowrap text-ellipsis overflow-hidden cursor-move',
+          'group-[.sidebar]:hidden flex-1 whitespace-nowrap text-ellipsis overflow-hidden',
+          !readOnly && 'cursor-move',
           integration.disabled && 'opacity-50'
         )}
       >
         {integration.name}
       </div>
-      <Menu
-        canChangeProfilePicture={integration.changeProfilePicture}
-        canChangeNickName={integration.changeNickName}
-        refreshChannel={refreshChannel}
-        mutate={mutate}
-        onChange={update}
-        id={integration.id}
-        canEnable={
-          user?.totalChannels! > totalNonDisabledChannels &&
-          integration.disabled
-        }
-        canDisable={!integration.disabled}
-      />
+      {!readOnly && (
+        <Menu
+          canChangeProfilePicture={integration.changeProfilePicture}
+          canChangeNickName={integration.changeNickName}
+          refreshChannel={refreshChannel}
+          mutate={mutate}
+          onChange={update}
+          id={integration.id}
+          canEnable={
+            user?.totalChannels! > totalNonDisabledChannels &&
+            integration.disabled
+          }
+          canDisable={!integration.disabled}
+        />
+      )}
     </div>
   );
 };
-export const LaunchesComponent = () => {
+export const LaunchesComponent: FC<{ readOnly?: boolean }> = ({ readOnly }) => {
   const fetch = useFetch();
   const user = useUser();
   const { billingEnabled } = useVariables();
@@ -471,7 +489,11 @@ export const LaunchesComponent = () => {
   const [collapseMenu, setCollapseMenu] = useCookie('collapseMenu', '0');
   const [channelsOpen, setChannelsOpen] = useState(false);
   const [mode] = useCookie('mode', 'dark');
-  const { isLoading, data: integrations, mutate } = useIntegrationList();
+  const {
+    isLoading,
+    data: integrations,
+    mutate,
+  } = useIntegrationList(readOnly ? '/user/all/integrations' : undefined);
 
   const totalNonDisabledChannels = useMemo(() => {
     return (
@@ -513,23 +535,40 @@ export const LaunchesComponent = () => {
     );
   }, [integrations]);
   const menuIntegrations = useMemo(() => {
+    // read-only groups are organizations, otherwise customers
+    const ownerOf = (i: any) =>
+      readOnly
+        ? {
+            id: i?.organization?.id as string,
+            name: orgDisplayName(i.organization, t),
+            isPersonal: !!i?.organization?.isPersonal,
+          }
+        : {
+            id: (i?.customer?.id || '') as string,
+            name: (i?.customer?.name || '') as string,
+            isPersonal: false,
+          };
     return orderBy(
       Object.values(
-        groupBy(sortedIntegrations, (o) => o?.customer?.id || '')
-      ).map((p) => ({
-        name: (p[0].customer?.name || '') as string,
-        id: (p[0].customer?.id || '') as string,
-        isEmpty: p.length === 0,
-        values: orderBy(
-          p,
-          ['type', 'disabled', 'identifier'],
-          ['desc', 'asc', 'asc']
-        ),
-      })),
-      ['isEmpty', 'name'],
+        groupBy(sortedIntegrations, (o) => ownerOf(o).id || '')
+      ).map((p) => {
+        const owner = ownerOf(p[0]);
+        return {
+          ...owner,
+          // equal organization names must not share state, so those key by id
+          groupKey: readOnly ? owner.id : owner.name,
+          isEmpty: p.length === 0,
+          values: orderBy(
+            p,
+            ['type', 'disabled', 'identifier'],
+            ['desc', 'asc', 'asc']
+          ),
+        };
+      }),
+      readOnly ? ['isPersonal', 'name'] : ['isEmpty', 'name'],
       ['desc', 'asc']
     );
-  }, [sortedIntegrations]);
+  }, [sortedIntegrations, readOnly, t]);
   const update = useCallback(async (shouldReload: boolean) => {
     if (shouldReload) {
       setReload(true);
@@ -616,6 +655,15 @@ export const LaunchesComponent = () => {
       window.close();
     }
   }, []);
+  const redirectToOwnCalendar = !!readOnly && !!user?.impersonate;
+  useEffect(() => {
+    if (redirectToOwnCalendar) {
+      router.replace('/launches');
+    }
+  }, [redirectToOwnCalendar]);
+  if (redirectToOwnCalendar) {
+    return null;
+  }
   if (isLoading || reload) {
     return (
       <div className="bg-newBgColorInner p-[20px] flex flex-1 flex-col gap-[15px] transition-all items-center justify-center">
@@ -627,10 +675,17 @@ export const LaunchesComponent = () => {
   // @ts-ignore
   return (
     <DNDProvider>
-      <Onboarding />
-      <ChannelsAfterPayment integrations={integrations} />
-      <HubspotInstalled />
-      <CalendarWeekProvider integrations={sortedIntegrations}>
+      {!readOnly && (
+        <>
+          <Onboarding />
+          <ChannelsAfterPayment integrations={integrations} />
+          <HubspotInstalled />
+        </>
+      )}
+      <CalendarWeekProvider
+        integrations={sortedIntegrations}
+        readOnly={readOnly}
+      >
         {channelsOpen && (
           <div
             className="hidden mobile:block fixed inset-0 bg-newBackdrop opacity-60 z-[149]"
@@ -700,13 +755,25 @@ export const LaunchesComponent = () => {
               </div>
             </div>
             <div className="flex flex-col gap-[8px] group-[.sidebar]:mx-auto group-[.sidebar]:w-[44px]">
-              <AddProviderButton update={() => update(true)} />
-              <div className="flex gap-[8px] group-[.sidebar]:flex-col mobile:hidden">
-                {sortedIntegrations?.length > 0 && <NewPost />}
-                {sortedIntegrations?.length > 0 &&
-                  user?.tier?.ai &&
-                  billingEnabled && <GeneratorComponent />}
-              </div>
+              {readOnly && (
+                <div className="text-[12px] text-textItemBlur group-[.sidebar]:hidden">
+                  {t(
+                    'all_organizations_read_only',
+                    'Read-only view of all your organizations'
+                  )}
+                </div>
+              )}
+              {!readOnly && (
+                <>
+                  <AddProviderButton update={() => update(true)} />
+                  <div className="flex gap-[8px] group-[.sidebar]:flex-col mobile:hidden">
+                    {sortedIntegrations?.length > 0 && <NewPost />}
+                    {sortedIntegrations?.length > 0 &&
+                      user?.tier?.ai &&
+                      billingEnabled && <GeneratorComponent />}
+                  </div>
+                </>
+              )}
             </div>
             <div className="gap-[32px] flex flex-col select-none flex-1">
               {sortedIntegrations.length === 0 &&
@@ -735,7 +802,7 @@ export const LaunchesComponent = () => {
                 <MenuGroupComponent
                   collapsed={collapseMenu === '1' && !channelsOpen}
                   changeItemGroup={changeItemGroup}
-                  key={menu.name}
+                  key={menu.groupKey}
                   group={menu}
                   mutate={mutate}
                   continueIntegration={continueIntegration}
@@ -780,16 +847,17 @@ export const LaunchesComponent = () => {
                 {sortedIntegrations.length || t('channels')}
               </div>
             </div>
-            {sortedIntegrations?.length > 0 ? (
-              <>
-                <NewPost />
-                {user?.tier?.ai && billingEnabled && <GeneratorComponent />}
-              </>
-            ) : (
-              <div className="flex-1">
-                <AddProviderButton update={() => update(true)} />
-              </div>
-            )}
+            {!readOnly &&
+              (sortedIntegrations?.length > 0 ? (
+                <>
+                  <NewPost />
+                  {user?.tier?.ai && billingEnabled && <GeneratorComponent />}
+                </>
+              ) : (
+                <div className="flex-1">
+                  <AddProviderButton update={() => update(true)} />
+                </div>
+              ))}
           </div>
           <Filters />
           <div className="flex-1 flex">

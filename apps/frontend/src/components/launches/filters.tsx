@@ -441,11 +441,13 @@ export const Filters = () => {
       )}
       {/* phones get a single filter button that opens the filters sheet */}
       <div className="contents mobile:hidden">
-        <SelectCustomer
-          customer={calendar.customer as string}
-          onChange={(customer: string) => setCustomer(customer)}
-          integrations={calendar.integrations}
-        />
+        {!calendar.readOnly && (
+          <SelectCustomer
+            customer={calendar.customer as string}
+            onChange={(customer: string) => setCustomer(customer)}
+            integrations={calendar.integrations}
+          />
+        )}
         <SelectChannels />
       </div>
       {calendar.integrations.length > 1 && (
@@ -498,66 +500,70 @@ export const Filters = () => {
           {t('month', 'Month')}
         </div>
         {/* the list toggle joins the view switcher on phones */}
-        <div
-          className={clsx(
-            'hidden mobile:block pt-[6px] pb-[5px] cursor-pointer mobile:flex-1 mobile:min-w-fit mobile:px-[6px] mobile:whitespace-nowrap text-center rounded-[6px]',
-            isListView && 'text-textItemFocused bg-boxFocused'
-          )}
-          onClick={setList}
-        >
-          {t('list', 'List')}
-        </div>
-      </div>
-      <div className="flex flex-row p-[4px] border border-newTableBorder rounded-[8px] text-[14px] font-[500] mobile:hidden">
-        <div
-          onClick={setCalendarView}
-          className={clsx(
-            'pt-[6px] pb-[5px] cursor-pointer flex justify-center items-center w-[34px] text-center rounded-[6px]',
-            !isListView && 'text-textItemFocused bg-boxFocused'
-          )}
-        >
-          {/*calendar*/}
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="17"
-            height="19"
-            viewBox="0 0 17 19"
-            fill="none"
+        {!calendar.readOnly && (
+          <div
+            className={clsx(
+              'hidden mobile:block pt-[6px] pb-[5px] cursor-pointer mobile:flex-1 mobile:min-w-fit mobile:px-[6px] mobile:whitespace-nowrap text-center rounded-[6px]',
+              isListView && 'text-textItemFocused bg-boxFocused'
+            )}
+            onClick={setList}
           >
-            <path
-              d="M15.75 7.41667H0.75M11.5833 0.75V4.08333M4.91667 0.75V4.08333M4.75 17.4167H11.75C13.1501 17.4167 13.8502 17.4167 14.385 17.1442C14.8554 16.9045 15.2378 16.522 15.4775 16.0516C15.75 15.5169 15.75 14.8168 15.75 13.4167V6.41667C15.75 5.01654 15.75 4.31647 15.4775 3.78169C15.2378 3.31129 14.8554 2.92883 14.385 2.68915C13.8502 2.41667 13.1501 2.41667 11.75 2.41667H4.75C3.34987 2.41667 2.6498 2.41667 2.11502 2.68915C1.64462 2.92883 1.26217 3.31129 1.02248 3.78169C0.75 4.31647 0.75 5.01654 0.75 6.41667V13.4167C0.75 14.8168 0.75 15.5169 1.02248 16.0516C1.26217 16.522 1.64462 16.9045 2.11502 17.1442C2.6498 17.4167 3.34987 17.4167 4.75 17.4167Z"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </div>
-        <div
-          onClick={setList}
-          className={clsx(
-            'pt-[6px] pb-[5px] flex justify-center items-center cursor-pointer w-[34px] text-center rounded-[6px]',
-            isListView && 'text-textItemFocused bg-boxFocused'
-          )}
-        >
-          {/*list*/}
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 20 20"
-            fill="none"
-          >
-            <path
-              d="M17.5 10L7.5 10M17.5 5.00002L7.5 5.00002M17.5 15L7.5 15M4.16667 10C4.16667 10.4603 3.79357 10.8334 3.33333 10.8334C2.8731 10.8334 2.5 10.4603 2.5 10C2.5 9.53978 2.8731 9.16669 3.33333 9.16669C3.79357 9.16669 4.16667 9.53978 4.16667 10ZM4.16667 5.00002C4.16667 5.46026 3.79357 5.83335 3.33333 5.83335C2.8731 5.83335 2.5 5.46026 2.5 5.00002C2.5 4.53978 2.8731 4.16669 3.33333 4.16669C3.79357 4.16669 4.16667 4.53978 4.16667 5.00002ZM4.16667 15C4.16667 15.4603 3.79357 15.8334 3.33333 15.8334C2.8731 15.8334 2.5 15.4603 2.5 15C2.5 14.5398 2.8731 14.1667 3.33333 14.1667C3.79357 14.1667 4.16667 14.5398 4.16667 15Z"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </div>
+            {t('list', 'List')}
+          </div>
+        )}
       </div>
+      {!calendar.readOnly && (
+        <div className="flex flex-row p-[4px] border border-newTableBorder rounded-[8px] text-[14px] font-[500] mobile:hidden">
+          <div
+            onClick={setCalendarView}
+            className={clsx(
+              'pt-[6px] pb-[5px] cursor-pointer flex justify-center items-center w-[34px] text-center rounded-[6px]',
+              !isListView && 'text-textItemFocused bg-boxFocused'
+            )}
+          >
+            {/*calendar*/}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="17"
+              height="19"
+              viewBox="0 0 17 19"
+              fill="none"
+            >
+              <path
+                d="M15.75 7.41667H0.75M11.5833 0.75V4.08333M4.91667 0.75V4.08333M4.75 17.4167H11.75C13.1501 17.4167 13.8502 17.4167 14.385 17.1442C14.8554 16.9045 15.2378 16.522 15.4775 16.0516C15.75 15.5169 15.75 14.8168 15.75 13.4167V6.41667C15.75 5.01654 15.75 4.31647 15.4775 3.78169C15.2378 3.31129 14.8554 2.92883 14.385 2.68915C13.8502 2.41667 13.1501 2.41667 11.75 2.41667H4.75C3.34987 2.41667 2.6498 2.41667 2.11502 2.68915C1.64462 2.92883 1.26217 3.31129 1.02248 3.78169C0.75 4.31647 0.75 5.01654 0.75 6.41667V13.4167C0.75 14.8168 0.75 15.5169 1.02248 16.0516C1.26217 16.522 1.64462 16.9045 2.11502 17.1442C2.6498 17.4167 3.34987 17.4167 4.75 17.4167Z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <div
+            onClick={setList}
+            className={clsx(
+              'pt-[6px] pb-[5px] flex justify-center items-center cursor-pointer w-[34px] text-center rounded-[6px]',
+              isListView && 'text-textItemFocused bg-boxFocused'
+            )}
+          >
+            {/*list*/}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 20 20"
+              fill="none"
+            >
+              <path
+                d="M17.5 10L7.5 10M17.5 5.00002L7.5 5.00002M17.5 15L7.5 15M4.16667 10C4.16667 10.4603 3.79357 10.8334 3.33333 10.8334C2.8731 10.8334 2.5 10.4603 2.5 10C2.5 9.53978 2.8731 9.16669 3.33333 9.16669C3.79357 9.16669 4.16667 9.53978 4.16667 10ZM4.16667 5.00002C4.16667 5.46026 3.79357 5.83335 3.33333 5.83335C2.8731 5.83335 2.5 5.46026 2.5 5.00002C2.5 4.53978 2.8731 4.16669 3.33333 4.16669C3.79357 4.16669 4.16667 4.53978 4.16667 5.00002ZM4.16667 15C4.16667 15.4603 3.79357 15.8334 3.33333 15.8334C2.8731 15.8334 2.5 15.4603 2.5 15C2.5 14.5398 2.8731 14.1667 3.33333 14.1667C3.79357 14.1667 4.16667 14.5398 4.16667 15Z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+        </div>
+      )}
       {filtersOpen && (
         <BottomSheet
           title={t('select_channels', 'Select Channels')}
@@ -567,12 +573,14 @@ export const Filters = () => {
             onClick: () => setFiltersOpen(false),
           }}
         >
-          <SelectCustomer
-            list={true}
-            customer={calendar.customer as string}
-            onChange={(customer: string) => setCustomer(customer)}
-            integrations={calendar.integrations}
-          />
+          {!calendar.readOnly && (
+            <SelectCustomer
+              list={true}
+              customer={calendar.customer as string}
+              onChange={(customer: string) => setCustomer(customer)}
+              integrations={calendar.integrations}
+            />
+          )}
           <SelectChannels list={true} />
         </BottomSheet>
       )}

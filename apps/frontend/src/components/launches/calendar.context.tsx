@@ -15,7 +15,7 @@ import dayjs from 'dayjs';
 import useSWR from 'swr';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { Post, Integration, Tags } from '@prisma/client';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import { extend } from 'dayjs';
@@ -35,6 +35,7 @@ export const CalendarContext = createContext({
   startDate: newDayjs().startOf('isoWeek').format('YYYY-MM-DD'),
   endDate: newDayjs().endOf('isoWeek').format('YYYY-MM-DD'),
   customer: null as string | null,
+  readOnly: false,
   loading: true,
   sets: [] as { name: string; id: string; content: string[] }[],
   signature: undefined as any,
@@ -119,6 +120,12 @@ export interface Integrations {
     name?: string;
     id?: string;
   };
+  // only on the All Orgs view
+  organization?: {
+    id: string;
+    name: string;
+    isPersonal: boolean;
+  };
 }
 
 // Helper function to get start and end dates based on display type
@@ -169,11 +176,13 @@ export const useNow = (unit: 'minute' | 'hour' = 'minute') => {
 export const CalendarWeekProvider: FC<{
   children: ReactNode;
   integrations: Integrations[];
-}> = ({ children, integrations }) => {
+  readOnly?: boolean;
+}> = ({ children, integrations, readOnly = false }) => {
   const fetch = useFetch();
   const [internalData, setInternalData] = useState([] as any[]);
   const [trendings] = useState<string[]>([]);
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   // A 7-column week doesn't fit a phone, so default small screens (tailwind `mobile`) to the day view
   const [displaySaved, setDisplaySaved] = useCookie(
     'calendar-display',
@@ -182,7 +191,10 @@ export const CalendarWeekProvider: FC<{
       ? 'day'
       : 'week'
   );
-  const display = searchParams.get('display') || displaySaved;
+  // the list view only exists for one organization, so All Orgs shows the week
+  const savedOrParam = searchParams.get('display') || displaySaved;
+  const listCoerced = readOnly && savedOrParam === 'list';
+  const display = listCoerced ? 'week' : savedOrParam;
 
   // List view state
   const [listPage, setListPage] = useState(0);
@@ -195,11 +207,15 @@ export const CalendarWeekProvider: FC<{
   // Initialize with current date range based on URL params or defaults
   const initStartDate = searchParams.get('startDate');
   const initEndDate = searchParams.get('endDate');
-  const initCustomer = searchParams.get('customer');
+  // no customer picker in read-only mode, so ignore a stale ?customer=
+  const initCustomer = readOnly ? null : searchParams.get('customer');
 
+  // list URLs carry a one-day range, so the week is recomputed around that day
   const initialRange =
     initStartDate && initEndDate
-      ? { startDate: initStartDate, endDate: initEndDate }
+      ? listCoerced
+        ? getDateRange('week', initStartDate)
+        : { startDate: initStartDate, endDate: initEndDate }
       : getDateRange(display);
 
   const [selectedChannels, setSelectedChannelsRaw] = useState<
@@ -239,7 +255,9 @@ export const CalendarWeekProvider: FC<{
       endDate: newDayjs(filters.endDate).endOf('day').utc().format(),
     }).toString();
 
-    const data = await (await fetch(`/posts?${modifiedParams}`)).json();
+    const data = await (
+      await fetch(`${readOnly ? '/user/all' : ''}/posts?${modifiedParams}`)
+    ).json();
     return expandPosts(data);
   }, [filters, params]);
 
@@ -265,7 +283,9 @@ export const CalendarWeekProvider: FC<{
     isLoading: calendarIsLoading,
     mutate: mutateCalendar,
   } = useSWR(
-    filters.display !== 'list' ? `/posts-${params}` : null,
+    filters.display !== 'list'
+      ? `/${readOnly ? 'all-' : ''}posts-${params}`
+      : null,
     loadData,
     {
       refreshInterval: 3600000,
@@ -299,7 +319,7 @@ export const CalendarWeekProvider: FC<{
     return (await fetch('/sets')).json();
   }, []);
 
-  const { data: sets, mutate } = useSWR('sets', setList, {
+  const { data: sets, mutate } = useSWR(readOnly ? null : 'sets', setList, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     revalidateIfStale: false,
@@ -307,7 +327,7 @@ export const CalendarWeekProvider: FC<{
     refreshWhenHidden: false,
     refreshWhenOffline: false,
   });
-  const { data: sign } = useSWR('default-sign', defaultSign, {
+  const { data: sign } = useSWR(readOnly ? null : 'default-sign', defaultSign, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     revalidateIfStale: false,
@@ -323,7 +343,10 @@ export const CalendarWeekProvider: FC<{
       display: 'week' | 'month' | 'day' | 'list';
       customer: string | null;
     }) => {
-      setDisplaySaved(newFilters.display);
+      // the read-only calendar must not overwrite the saved normal calendar view
+      if (!readOnly) {
+        setDisplaySaved(newFilters.display);
+      }
       setFilters(newFilters);
       setInternalData([]);
 
@@ -338,9 +361,9 @@ export const CalendarWeekProvider: FC<{
         `display=${newFilters.display}`,
         newFilters.customer ? `customer=${newFilters.customer}` : ``,
       ].filter((f) => f);
-      window.history.replaceState(null, '', `/launches?${path.join('&')}`);
+      window.history.replaceState(null, '', `${pathname}?${path.join('&')}`);
     },
-    []
+    [pathname, readOnly]
   );
 
   const filterByChannels = useCallback(
@@ -410,6 +433,7 @@ export const CalendarWeekProvider: FC<{
         trendings,
         reloadCalendarView,
         ...filters,
+        readOnly,
         posts: calendarIsLoading ? [] : filterByChannels(internalData),
         postDates,
         loading,

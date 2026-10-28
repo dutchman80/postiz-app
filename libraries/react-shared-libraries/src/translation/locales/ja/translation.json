@@ -909,6 +909,8 @@
   "media_settings_section_tooltip": "サムネイルはメイン投稿の動画に適用され、対応しているすべてのチャンネルに送信されます。YouTubeでは、Shorts（縦型・最長3分）の動画として扱われる場合、サムネイルが無視されることがありますが、公開自体は失敗しません。カスタムサムネイルには、電話番号認証済みのチャンネルが必要です。YouTubeがサムネイルを却下した場合でも動画は公開されます。また、Postizでは事前にサムネイルの利用可否を確認することはできません。",
   "youtube_thumbnail_overrides_media": "この投稿にはYouTube専用のサムネイルが設定されており、メディア設定で設定したサムネイルは上書きされます。",
   "personal_organization": "個人",
+  "all_organizations": "すべての組織",
+  "all_organizations_read_only": "すべての組織の読み取り専用ビュー",
   "create_organization": "組織を作成",
   "organization_name": "組織名",
   "enter_organization_name": "組織名を入力",

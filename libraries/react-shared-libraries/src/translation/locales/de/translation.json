@@ -909,6 +909,8 @@
   "media_settings_section_tooltip": "Vorschaubilder gelten für Videos im Hauptbeitrag und werden an jeden Kanal gesendet, der sie unterstützt. YouTube kann sie bei Videos ignorieren, die als Shorts behandelt werden (vertikal, bis zu 3 Minuten), ohne dass die Veröffentlichung fehlschlägt, und erfordert für benutzerdefinierte Vorschaubilder einen kanal, der per Telefon verifiziert ist. Wenn YouTube das Vorschaubild ablehnt, wird das Video trotzdem veröffentlicht, und Postiz kann die Eignung nicht im Voraus prüfen.",
   "youtube_thumbnail_overrides_media": "Dieser Beitrag hat ein YouTube-spezifisches Vorschaubild, das das in den Medien-Einstellungen festgelegte Vorschaubild überschreibt.",
   "personal_organization": "Persönlich",
+  "all_organizations": "Alle Organisationen",
+  "all_organizations_read_only": "Schreibgeschützte Ansicht aller deiner Organisationen",
   "create_organization": "Organisation erstellen",
   "organization_name": "Name der Organisation",
   "enter_organization_name": "Namen der Organisation eingeben",
