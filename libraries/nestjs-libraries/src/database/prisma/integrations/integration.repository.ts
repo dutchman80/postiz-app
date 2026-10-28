@@ -635,6 +635,7 @@ export class IntegrationRepository {
         organizationId: { in: orgIds },
         deletedAt: null,
       },
+      orderBy: [{ organizationId: 'asc' }, { createdAt: 'asc' }],
       select: {
         id: true,
         name: true,
