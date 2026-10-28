@@ -181,7 +181,7 @@ export class OrganizationService {
   private assertNotPersonal(org: Organization) {
     if (org.personalUserId) {
       throw new HttpException(
-        'Team members cannot be added to a personal organization',
+        'A personal organization has no team members',
         400
       );
     }
@@ -276,6 +276,8 @@ export class OrganizationService {
   }
 
   async deleteTeamMember(org: Organization, userId: string) {
+    this.assertNotPersonal(org);
+
     const userOrgs = await this._organizationRepository.getOrgsByUserId(userId);
     const findOrgToDelete = userOrgs.find((orgUser) => orgUser.id === org.id);
     if (!findOrgToDelete) {
