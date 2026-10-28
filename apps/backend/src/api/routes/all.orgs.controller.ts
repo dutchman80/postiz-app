@@ -1,10 +1,13 @@
 import { Controller, Get, HttpException, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
 import { GetOrgIdsFromRequest } from '@gitroom/nestjs-libraries/user/org.from.request';
 import { PostsService } from '@gitroom/nestjs-libraries/database/prisma/posts/posts.service';
 import { IntegrationService } from '@gitroom/nestjs-libraries/database/prisma/integrations/integration.service';
 import { GetPostsDto } from '@gitroom/nestjs-libraries/dtos/posts/get.posts.dto';
+
+dayjs.extend(utc);
 
 @ApiTags('User')
 @Controller('/user/all')
@@ -29,11 +32,15 @@ export class AllOrgsController {
   ) {
     // Aggregate path only; the shared getPosts path is unbounded, see issue #13.
     // 45 days = longest calendar month view (31 days) plus margin.
-    const start = dayjs(query.startDate);
-    const end = dayjs(query.endDate);
+    // new Date rejects impossible ISO dates (2026-02-30), dayjs would roll them over.
+    const startDate = new Date(query.startDate);
+    const endDate = new Date(query.endDate);
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      throw new HttpException('Invalid date range', 400);
+    }
+    const start = dayjs.utc(startDate);
+    const end = dayjs.utc(endDate);
     if (
-      !start.isValid() ||
-      !end.isValid() ||
       end.isBefore(start) ||
       end.diff(start, 'day', true) > 45 ||
       // Safety bound for the aggregate route while issue #13 tracks the
