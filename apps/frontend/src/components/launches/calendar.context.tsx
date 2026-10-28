@@ -15,7 +15,7 @@ import dayjs from 'dayjs';
 import useSWR from 'swr';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { Post, Integration, Tags } from '@prisma/client';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import { extend } from 'dayjs';
@@ -177,11 +177,12 @@ export const CalendarWeekProvider: FC<{
   children: ReactNode;
   integrations: Integrations[];
   readOnly?: boolean;
-}> = ({ children, integrations, readOnly }) => {
+}> = ({ children, integrations, readOnly = false }) => {
   const fetch = useFetch();
   const [internalData, setInternalData] = useState([] as any[]);
   const [trendings] = useState<string[]>([]);
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   // A 7-column week doesn't fit a phone, so default small screens (tailwind `mobile`) to the day view
   const [displaySaved, setDisplaySaved] = useCookie(
     'calendar-display',
@@ -245,7 +246,7 @@ export const CalendarWeekProvider: FC<{
   const loadData = useCallback(async () => {
     const modifiedParams = new URLSearchParams({
       display: filters.display,
-      customer: (!readOnly && filters?.customer?.toString()) || '',
+      customer: filters?.customer?.toString() || '',
       startDate: newDayjs(filters.startDate).startOf('day').utc().format(),
       endDate: newDayjs(filters.endDate).endOf('day').utc().format(),
     }).toString();
@@ -351,17 +352,11 @@ export const CalendarWeekProvider: FC<{
         `startDate=${newFilters.startDate}`,
         `endDate=${newFilters.endDate}`,
         `display=${newFilters.display}`,
-        !readOnly && newFilters.customer
-          ? `customer=${newFilters.customer}`
-          : ``,
+        newFilters.customer ? `customer=${newFilters.customer}` : ``,
       ].filter((f) => f);
-      window.history.replaceState(
-        null,
-        '',
-        `/launches${readOnly ? '/all' : ''}?${path.join('&')}`
-      );
+      window.history.replaceState(null, '', `${pathname}?${path.join('&')}`);
     },
-    []
+    [pathname]
   );
 
   const filterByChannels = useCallback(
@@ -431,7 +426,7 @@ export const CalendarWeekProvider: FC<{
         trendings,
         reloadCalendarView,
         ...filters,
-        readOnly: !!readOnly,
+        readOnly,
         posts: calendarIsLoading ? [] : filterByChannels(internalData),
         postDates,
         loading,

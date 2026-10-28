@@ -7,7 +7,10 @@ import {
 import { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import SafeImage from '@gitroom/react/helpers/safe.image';
 import { capitalize, groupBy, orderBy } from 'lodash';
-import { CalendarWeekProvider } from '@gitroom/frontend/components/launches/calendar.context';
+import {
+  CalendarWeekProvider,
+  useCalendar,
+} from '@gitroom/frontend/components/launches/calendar.context';
 import { Filters } from '@gitroom/frontend/components/launches/filters';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { LoadingComponent } from '@gitroom/frontend/components/layout/loading';
@@ -27,7 +30,6 @@ import { useVariables } from '@gitroom/react/helpers/variable.context';
 import { NewPost } from '@gitroom/frontend/components/launches/new.post';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import { useIntegrationList } from '@gitroom/frontend/components/launches/helpers/use.integration.list';
-import { useAllOrgsIntegrations } from '@gitroom/frontend/components/launches/helpers/use.all.orgs.integrations';
 import useCookie from 'react-use-cookie';
 import { Onboarding } from '@gitroom/frontend/components/onboarding/onboarding';
 import { ChannelsAfterPayment } from '@gitroom/frontend/components/layout/check.payment';
@@ -35,6 +37,7 @@ import { HubspotInstalled } from '@gitroom/frontend/components/launches/hubspot.
 import { useModals } from '@gitroom/frontend/components/layout/new-modal';
 import { Input } from '@gitroom/react/form/input';
 import { Button } from '@gitroom/react/form/button';
+import { orgDisplayName } from '@gitroom/frontend/components/layout/organization.selector';
 
 export const SVGLine = () => {
   return (
@@ -92,7 +95,6 @@ interface MenuComponentInterface {
   totalNonDisabledChannels: number;
   mutate: (shouldReload?: boolean) => void;
   update: (shouldReload: boolean) => void;
-  readOnly?: boolean;
 }
 export const OpenClose: FC<{
   isOpen: boolean;
@@ -187,6 +189,7 @@ export const MenuGroupComponent: FC<
     group: {
       id: string;
       name: string;
+      groupKey: string;
       values: Array<
         Integration & {
           identifier: string;
@@ -206,13 +209,12 @@ export const MenuGroupComponent: FC<
     refreshChannel,
     changeItemGroup,
     collapsed,
-    readOnly,
   } = props;
+  const { readOnly } = useCalendar();
   const t = useT();
   const modals = useModals();
   const toaster = useToaster();
-  // read-only groups are organizations, keyed by id so equal names do not share state
-  const openKey = (readOnly ? group.id : group.name) + '_isOpen';
+  const openKey = group.groupKey + '_isOpen';
   const [isOpen, setIsOpen] = useState(
     !!+(localStorage.getItem(openKey) || '1')
   );
@@ -321,7 +323,6 @@ export const MenuGroupComponent: FC<
             update={update}
             refreshChannel={refreshChannel}
             totalNonDisabledChannels={totalNonDisabledChannels}
-            readOnly={readOnly}
           />
         ))}
       </div>
@@ -346,8 +347,8 @@ export const MenuComponent: FC<
     update,
     integration,
     collapsed,
-    readOnly,
   } = props;
+  const { readOnly } = useCalendar();
   const user = useUser();
   const t = useT();
   const [collected, drag, dragPreview] = useDrag(() => ({
@@ -488,13 +489,11 @@ export const LaunchesComponent: FC<{ readOnly?: boolean }> = ({ readOnly }) => {
   const [collapseMenu, setCollapseMenu] = useCookie('collapseMenu', '0');
   const [channelsOpen, setChannelsOpen] = useState(false);
   const [mode] = useCookie('mode', 'dark');
-  const ownIntegrations = useIntegrationList(!readOnly);
-  const allIntegrations = useAllOrgsIntegrations(!!readOnly);
   const {
     isLoading,
     data: integrations,
     mutate,
-  } = readOnly ? allIntegrations : ownIntegrations;
+  } = useIntegrationList(readOnly ? '/user/all/integrations' : undefined);
 
   const totalNonDisabledChannels = useMemo(() => {
     return (
@@ -536,29 +535,36 @@ export const LaunchesComponent: FC<{ readOnly?: boolean }> = ({ readOnly }) => {
     );
   }, [integrations]);
   const menuIntegrations = useMemo(() => {
+    // read-only groups are organizations, otherwise customers
+    const ownerOf = (i: any) =>
+      readOnly
+        ? {
+            id: i?.organization?.id as string,
+            name: orgDisplayName(i.organization, t),
+            isPersonal: !!i?.organization?.isPersonal,
+          }
+        : {
+            id: (i?.customer?.id || '') as string,
+            name: (i?.customer?.name || '') as string,
+            isPersonal: false,
+          };
     return orderBy(
       Object.values(
-        groupBy(
-          sortedIntegrations,
-          (o) => (readOnly ? o?.organization?.id : o?.customer?.id) || ''
-        )
-      ).map((p) => ({
-        name: (readOnly
-          ? p[0].organization?.isPersonal
-            ? t('personal_organization', 'Personal')
-            : p[0].organization?.name
-          : p[0].customer?.name || '') as string,
-        id: (readOnly
-          ? p[0].organization?.id
-          : p[0].customer?.id || '') as string,
-        isEmpty: p.length === 0,
-        isPersonal: !!(readOnly && p[0].organization?.isPersonal),
-        values: orderBy(
-          p,
-          ['type', 'disabled', 'identifier'],
-          ['desc', 'asc', 'asc']
-        ),
-      })),
+        groupBy(sortedIntegrations, (o) => ownerOf(o).id || '')
+      ).map((p) => {
+        const owner = ownerOf(p[0]);
+        return {
+          ...owner,
+          // equal organization names must not share state, so those key by id
+          groupKey: readOnly ? owner.id : owner.name,
+          isEmpty: p.length === 0,
+          values: orderBy(
+            p,
+            ['type', 'disabled', 'identifier'],
+            ['desc', 'asc', 'asc']
+          ),
+        };
+      }),
       readOnly ? ['isPersonal', 'name'] : ['isEmpty', 'name'],
       ['desc', 'asc']
     );
@@ -660,9 +666,13 @@ export const LaunchesComponent: FC<{ readOnly?: boolean }> = ({ readOnly }) => {
   // @ts-ignore
   return (
     <DNDProvider>
-      {!readOnly && <Onboarding />}
-      {!readOnly && <ChannelsAfterPayment integrations={integrations} />}
-      {!readOnly && <HubspotInstalled />}
+      {!readOnly && (
+        <>
+          <Onboarding />
+          <ChannelsAfterPayment integrations={integrations} />
+          <HubspotInstalled />
+        </>
+      )}
       <CalendarWeekProvider
         integrations={sortedIntegrations}
         readOnly={readOnly}
@@ -744,14 +754,16 @@ export const LaunchesComponent: FC<{ readOnly?: boolean }> = ({ readOnly }) => {
                   )}
                 </div>
               )}
-              {!readOnly && <AddProviderButton update={() => update(true)} />}
               {!readOnly && (
-                <div className="flex gap-[8px] group-[.sidebar]:flex-col mobile:hidden">
-                  {sortedIntegrations?.length > 0 && <NewPost />}
-                  {sortedIntegrations?.length > 0 &&
-                    user?.tier?.ai &&
-                    billingEnabled && <GeneratorComponent />}
-                </div>
+                <>
+                  <AddProviderButton update={() => update(true)} />
+                  <div className="flex gap-[8px] group-[.sidebar]:flex-col mobile:hidden">
+                    {sortedIntegrations?.length > 0 && <NewPost />}
+                    {sortedIntegrations?.length > 0 &&
+                      user?.tier?.ai &&
+                      billingEnabled && <GeneratorComponent />}
+                  </div>
+                </>
               )}
             </div>
             <div className="gap-[32px] flex flex-col select-none flex-1">
@@ -781,8 +793,7 @@ export const LaunchesComponent: FC<{ readOnly?: boolean }> = ({ readOnly }) => {
                 <MenuGroupComponent
                   collapsed={collapseMenu === '1' && !channelsOpen}
                   changeItemGroup={changeItemGroup}
-                  key={readOnly ? menu.id : menu.name}
-                  readOnly={readOnly}
+                  key={menu.groupKey}
                   group={menu}
                   mutate={mutate}
                   continueIntegration={continueIntegration}

@@ -15,6 +15,11 @@ import { CreateOrganizationDto } from '@gitroom/nestjs-libraries/dtos/settings/c
 import clsx from 'clsx';
 import { usePathname, useRouter } from 'next/navigation';
 
+export const orgDisplayName = (
+  org: { name: string; isPersonal?: boolean },
+  t: ReturnType<typeof useT>
+) => (org.isPersonal ? t('personal_organization', 'Personal') : org.name);
+
 const CreateOrganization: FC = () => {
   const fetch = useFetch();
   const toast = useToaster();
@@ -115,8 +120,6 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
       ?.filter((d: any) => allMode || d.id !== user?.orgId)
       .sort((a: any, b: any) => Number(b.isPersonal) - Number(a.isPersonal));
   }, [current, data, allMode]);
-  const orgName = (org: { name: string; isPersonal?: boolean }) =>
-    org.isPersonal ? t('personal_organization', 'Personal') : org.name;
   const createOrg = useCallback(() => {
     modals.openModal({
       classNames: {
@@ -178,7 +181,7 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
                 <div className="max-w-[240px] truncate mobile:hidden">
                   {allMode
                     ? t('all_organizations', 'All Orgs')
-                    : orgName(current)}
+                    : orgDisplayName(current, t)}
                 </div>
               )}
             </div>
@@ -214,7 +217,7 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
                   onClick={changeOrg(org)}
                   className="whitespace-nowrap truncate"
                 >
-                  {orgName(org)}
+                  {orgDisplayName(org, t)}
                   {!!org?.users?.[0]?.role && (
                     <span className="text-customColor18">
                       {' '}
