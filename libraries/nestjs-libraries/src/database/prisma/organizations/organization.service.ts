@@ -10,6 +10,7 @@ import { AdminAddTeamMemberDto } from '@gitroom/nestjs-libraries/dtos/settings/a
 import { pricing } from '@gitroom/nestjs-libraries/database/prisma/subscriptions/pricing';
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import dayjs from 'dayjs';
+import { escape } from 'lodash';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import {
   Organization,
@@ -154,6 +155,10 @@ export class OrganizationService {
     return this._organizationRepository.getUserOrg(id);
   }
 
+  createOrganization(userId: string, name: string) {
+    return this._organizationRepository.createOrganization(userId, name);
+  }
+
   getOrgsByUserId(userId: string) {
     return this._organizationRepository.getOrgsByUserId(userId);
   }
@@ -209,7 +214,7 @@ export class OrganizationService {
       await this._notificationsService.sendEmail(
         body.email,
         `${user.name || user.email} invited you to join "${org.name}"`,
-        `${inviter} has invited you to join the "${org.name}" team.<br /><a href="${url}">Accept the invitation</a> to get started.<br />The link will expire in 2 days.`
+        `${escape(inviter)} has invited you to join the "${escape(org.name)}" team.<br /><a href="${url}">Accept the invitation</a> to get started.<br />The link will expire in 2 days.`
       );
     }
     return { url };

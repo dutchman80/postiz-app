@@ -84,6 +84,11 @@ export const SettingsPopup: FC<{
   }, []);
 
   const t = useT();
+  const canSeeTeams =
+    user?.tier?.team_members &&
+    isGeneral &&
+    user?.role !== 'USER' &&
+    !user?.isPersonal;
   const list = useMemo(() => {
     const arr = [];
     arr.push({ tab: 'global_settings', label: t('global_settings', 'Global Settings') });
@@ -91,7 +96,7 @@ export const SettingsPopup: FC<{
     if (user?.tier?.public_api && isGeneral && showLogout) {
       arr.push({ tab: 'agents', label: t('agents_dev', 'Agents / Dev') });
     }
-    if (user?.tier?.team_members && isGeneral && user?.role !== 'USER') {
+    if (canSeeTeams) {
       arr.push({ tab: 'teams', label: t('teams', 'Teams') });
     }
     if (user?.tier?.webhooks) {
@@ -111,7 +116,7 @@ export const SettingsPopup: FC<{
     arr.push({ tab: 'apps', label: t('apps', 'Apps') });
 
     return arr;
-  }, [user, isGeneral, showLogout, t]);
+  }, [user, isGeneral, showLogout, canSeeTeams, t]);
 
   const [tab, setTab] = useState(() => {
     const requested = url.get('tab');
@@ -174,14 +179,11 @@ export const SettingsPopup: FC<{
                   <GlobalSettings />
                 </div>
               )}
-              {tab === 'teams' &&
-                !!user?.tier?.team_members &&
-                isGeneral &&
-                user?.role !== 'USER' && (
-                  <div>
-                    <TeamsComponent />
-                  </div>
-                )}
+              {tab === 'teams' && !!canSeeTeams && (
+                <div>
+                  <TeamsComponent />
+                </div>
+              )}
 
               {tab === 'webhooks' && !!user?.tier?.webhooks && (
                 <div>

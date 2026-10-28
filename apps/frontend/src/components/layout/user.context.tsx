@@ -10,6 +10,7 @@ export const UserContext = createContext<
   | undefined
   | (User & {
       orgId: string;
+      isPersonal?: boolean;
       tier: PricingInnerInterface;
       publicApi: string;
       role: 'USER' | 'ADMIN' | 'SUPERADMIN';

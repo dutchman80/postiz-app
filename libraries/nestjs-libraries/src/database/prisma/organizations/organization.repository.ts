@@ -41,8 +41,7 @@ export class OrganizationRepository {
       : `${saasName}+` + makeId(10) + '@postiz.com';
     const userName = name ? `${name}###${id}` : `Unnamed User###${id}`;
     const data: Prisma.OrganizationCreateInput = {
-      name: userName,
-      apiKey: AuthService.fixedEncryption(makeSecureId(20)),
+      ...this.orgData(userName),
       isTrailing: false,
       subscription: {
         create: {
@@ -586,24 +585,31 @@ export class OrganizationRepository {
     });
   }
 
+  private orgData(name: string) {
+    return {
+      name,
+      apiKey: AuthService.fixedEncryption(makeSecureId(20)),
+    };
+  }
+
   // every user owns exactly one Personal organization, personalUserId is unique
   private personalOrgData(userId: string) {
     return {
-      name: 'Personal',
-      apiKey: AuthService.fixedEncryption(makeSecureId(20)),
+      ...this.orgData('Personal'),
       allowTrial: true,
       isTrailing: true,
       personalUserId: userId,
     };
   }
 
-  private createPersonalOrg(
-    tx: Pick<Prisma.TransactionClient, 'organization'>,
+  private createWithOwner(
+    client: Pick<Prisma.TransactionClient, 'organization'>,
+    data: Omit<Prisma.OrganizationUncheckedCreateInput, 'users'>,
     userId: string
   ) {
-    return tx.organization.create({
+    return client.organization.create({
       data: {
-        ...this.personalOrgData(userId),
+        ...data,
         users: {
           create: {
             role: Role.SUPERADMIN,
@@ -615,6 +621,22 @@ export class OrganizationRepository {
         id: true,
       },
     });
+  }
+
+  private createPersonalOrg(
+    tx: Pick<Prisma.TransactionClient, 'organization'>,
+    userId: string
+  ) {
+    return this.createWithOwner(tx, this.personalOrgData(userId), userId);
+  }
+
+  createOrganization(userId: string, name: string) {
+    return this.createWithOwner(
+      this._organization.model,
+      // additional organizations get no trial, the Personal one carries the trial flags
+      this.orgData(name),
+      userId
+    );
   }
 
   createUserWithPersonalOrg(

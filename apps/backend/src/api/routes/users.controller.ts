@@ -31,6 +31,7 @@ import { UsersService } from '@gitroom/nestjs-libraries/database/prisma/users/us
 import { UserDetailDto } from '@gitroom/nestjs-libraries/dtos/users/user.details.dto';
 import { EmailNotificationsDto } from '@gitroom/nestjs-libraries/dtos/users/email-notifications.dto';
 import { TimezoneDto } from '@gitroom/nestjs-libraries/dtos/users/timezone.dto';
+import { CreateOrganizationDto } from '@gitroom/nestjs-libraries/dtos/settings/create.organization.dto';
 import { AddEmailDto } from '@gitroom/nestjs-libraries/dtos/users/add.email.dto';
 import { HttpForbiddenException } from '@gitroom/nestjs-libraries/services/exception.filter';
 import { RealIP } from 'nestjs-real-ip';
@@ -101,6 +102,7 @@ export class UsersController {
     return {
       ...user,
       orgId: organization.id,
+      isPersonal: !!organization.personalUserId,
       totalChannels: !process.env.STRIPE_PUBLISHABLE_KEY
         ? 10000
         : // @ts-ignore
@@ -216,6 +218,13 @@ export class UsersController {
       return payload?.id || null;
     } catch {
       return null;
+    }
+  }
+
+  private assertNotImpersonating(req: Request, message: string) {
+    const impersonate = req.cookies.impersonate || req.headers.impersonate;
+    if (impersonate) {
+      throw new HttpException(message, 400);
     }
   }
 
@@ -349,11 +358,40 @@ export class UsersController {
       }));
   }
 
+  @UseGuards(ThrottlerRealIpGuard)
+  @Throttle({ default: { limit: 10, ttl: 3600000 } })
+  @Post('/organizations')
+  async createOrg(
+    @GetUserFromRequest() user: User,
+    @Req() req: Request,
+    @Body() body: CreateOrganizationDto,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    this.assertNotImpersonating(
+      req,
+      'Organization cannot be created while impersonating'
+    );
+
+    const { id } = await this._orgService.createOrganization(
+      user.id,
+      body.name
+    );
+    this.setOrgCookie(response, id);
+
+    return { id };
+  }
+
   @Post('/change-org')
   changeOrg(
     @Body('id') id: string,
     @Res({ passthrough: true }) response: Response
   ) {
+    this.setOrgCookie(response, id);
+
+    response.status(200).send();
+  }
+
+  private setOrgCookie(response: Response, id: string) {
     response.cookie('showorg', id, {
       domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
       ...(!process.env.NOT_SECURED
@@ -369,8 +407,6 @@ export class UsersController {
     if (process.env.NOT_SECURED) {
       response.header('showorg', id);
     }
-
-    response.status(200).send();
   }
 
   @Get('/delete-account-info')
@@ -384,13 +420,10 @@ export class UsersController {
     @Req() req: Request,
     @Res({ passthrough: true }) response: Response
   ) {
-    const impersonate = req.cookies.impersonate || req.headers.impersonate;
-    if (impersonate) {
-      throw new HttpException(
-        'Account cannot be deleted while impersonating',
-        400
-      );
-    }
+    this.assertNotImpersonating(
+      req,
+      'Account cannot be deleted while impersonating'
+    );
 
     // Cancel billing before scrubbing the account — once the account is
     // deleted there is no way to retry a failed cancellation
