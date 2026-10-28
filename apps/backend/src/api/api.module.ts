@@ -55,10 +55,12 @@ import { AppleProvider } from '@gitroom/backend/services/auth/providers/apple.pr
 import { FarcasterProvider } from '@gitroom/backend/services/auth/providers/farcaster.provider';
 import { WalletProvider } from '@gitroom/backend/services/auth/providers/wallet.provider';
 import { OauthProvider } from '@gitroom/backend/services/auth/providers/oauth.provider';
+import { AllOrgsController } from '@gitroom/backend/api/routes/all.orgs.controller';
 import { StripeController } from '@gitroom/backend/api/routes/stripe.controller';
 
 const authenticatedController = [
   UsersController,
+  AllOrgsController,
   AnalyticsController,
   IntegrationsController,
   SettingsController,
