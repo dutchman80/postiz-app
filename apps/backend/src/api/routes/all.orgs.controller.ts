@@ -1,11 +1,7 @@
-import { Controller, Get, HttpException, Query, Req } from '@nestjs/common';
+import { Controller, Get, HttpException, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Organization, User } from '@prisma/client';
-import { Request } from 'express';
 import dayjs from 'dayjs';
-import { GetUserFromRequest } from '@gitroom/nestjs-libraries/user/user.from.request';
-import { GetOrgFromRequest } from '@gitroom/nestjs-libraries/user/org.from.request';
-import { OrganizationService } from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.service';
+import { GetOrgIdsFromRequest } from '@gitroom/nestjs-libraries/user/org.from.request';
 import { PostsService } from '@gitroom/nestjs-libraries/database/prisma/posts/posts.service';
 import { IntegrationService } from '@gitroom/nestjs-libraries/database/prisma/integrations/integration.service';
 import { GetPostsDto } from '@gitroom/nestjs-libraries/dtos/posts/get.posts.dto';
@@ -14,17 +10,9 @@ import { GetPostsDto } from '@gitroom/nestjs-libraries/dtos/posts/get.posts.dto'
 @Controller('/user/all')
 export class AllOrgsController {
   constructor(
-    private _organizationService: OrganizationService,
     private _postsService: PostsService,
     private _integrationService: IntegrationService
   ) {}
-
-  private orgIds(user: User, org: Organization, req: Request) {
-    const impersonate = req.cookies.impersonate || req.headers.impersonate;
-    return impersonate
-      ? [org.id]
-      : this._organizationService.getActiveOrgIdsByUserId(user.id);
-  }
 
   private parsePostingTimes(postingTimes: string) {
     try {
@@ -36,9 +24,7 @@ export class AllOrgsController {
 
   @Get('/posts')
   async getPosts(
-    @GetUserFromRequest() user: User,
-    @GetOrgFromRequest() org: Organization,
-    @Req() req: Request,
+    @GetOrgIdsFromRequest() orgIds: string[],
     @Query() query: GetPostsDto
   ) {
     // Aggregate path only; the shared getPosts path is unbounded, see issue #13.
@@ -46,23 +32,14 @@ export class AllOrgsController {
     if (dayjs(query.endDate).diff(dayjs(query.startDate), 'day', true) > 45) {
       throw new HttpException('Date range too large', 400);
     }
-    return this._postsService.getPostsForOrganizationsMinified(
-      await this.orgIds(user, org, req),
-      query
-    );
+    return this._postsService.getPostsForOrganizationsMinified(orgIds, query);
   }
 
   @Get('/integrations')
-  async getIntegrations(
-    @GetUserFromRequest() user: User,
-    @GetOrgFromRequest() org: Organization,
-    @Req() req: Request
-  ) {
+  async getIntegrations(@GetOrgIdsFromRequest() orgIds: string[]) {
     return {
       integrations: (
-        await this._integrationService.getIntegrationsForOrganizations(
-          await this.orgIds(user, org, req)
-        )
+        await this._integrationService.getIntegrationsForOrganizations(orgIds)
       ).map((p) => ({
         id: p.id,
         name: p.customName || p.name,

@@ -163,12 +163,6 @@ export class OrganizationService {
     return this._organizationRepository.getOrgsByUserId(userId);
   }
 
-  async getActiveOrgIdsByUserId(userId: string) {
-    return (await this._organizationRepository.getOrgsByUserId(userId))
-      .filter((org) => !org.users[0]?.disabled)
-      .map((org) => org.id);
-  }
-
   updateApiKey(orgId: string) {
     return this._organizationRepository.updateApiKey(orgId);
   }

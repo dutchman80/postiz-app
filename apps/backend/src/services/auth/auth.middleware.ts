@@ -80,6 +80,10 @@ export class AuthMiddleware implements NestMiddleware {
           // eslint-disable-next-line @typescript-eslint/ban-ts-comment
           // @ts-expect-error
           req.org = loadImpersonate.organization;
+          // read scope for cross-organization endpoints; equals [org.id] while impersonating
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-expect-error
+          req.orgIds = [loadImpersonate.organization.id];
 
           setSentryUserContext({
             userId: user.id,
@@ -118,6 +122,10 @@ export class AuthMiddleware implements NestMiddleware {
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-expect-error
       req.org = setOrg;
+      // read scope for cross-organization endpoints; equals [org.id] while impersonating
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-expect-error
+      req.orgIds = organization.map((o) => o.id);
 
       setSentryUserContext({
         userId: user.id,

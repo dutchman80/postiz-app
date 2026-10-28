@@ -6,3 +6,10 @@ export const GetOrgFromRequest = createParamDecorator(
     return request.org;
   }
 );
+
+export const GetOrgIdsFromRequest = createParamDecorator(
+  (data: unknown, ctx: ExecutionContext) => {
+    const request = ctx.switchToHttp().getRequest();
+    return request.orgIds;
+  }
+);

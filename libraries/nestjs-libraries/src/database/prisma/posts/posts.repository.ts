@@ -162,7 +162,7 @@ export class PostsRepository {
   }
 
   private async findCalendarPosts(
-    orgId: string | Prisma.StringFilter,
+    organizationId: string | Prisma.StringFilter,
     query: GetPostsDto
   ) {
     // Use the provided start and end dates directly
@@ -175,7 +175,7 @@ export class PostsRepository {
           {
             OR: [
               {
-                organizationId: orgId,
+                organizationId,
               },
             ],
           },
@@ -197,7 +197,7 @@ export class PostsRepository {
         ],
         integration: {
           deletedAt: null,
-          organizationId: orgId,
+          organizationId,
           ...(query.customer ? { customerId: query.customer } : {}),
         },
         deletedAt: null,
