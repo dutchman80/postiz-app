@@ -101,8 +101,9 @@ export const OrganizationSelector: FC<{
   const t = useT();
   const modals = useModals();
   const router = useRouter();
+  const pathname = usePathname();
   const allMode =
-    usePathname().startsWith('/launches/all') && !user?.impersonate;
+    withAllOrgs && pathname.startsWith('/launches/all') && !user?.impersonate;
   const load = useCallback(async () => {
     return await (await fetch('/user/organizations')).json();
   }, []);
