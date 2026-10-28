@@ -92,15 +92,17 @@ const CreateOrganization: FC = () => {
     </FormProvider>
   );
 };
-export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
-  asOpenSelect,
-}) => {
+export const OrganizationSelector: FC<{
+  asOpenSelect?: boolean;
+  withAllOrgs?: boolean;
+}> = ({ asOpenSelect, withAllOrgs = true }) => {
   const fetch = useFetch();
   const user = useUser();
   const t = useT();
   const modals = useModals();
   const router = useRouter();
-  const allMode = usePathname().startsWith('/launches/all');
+  const allMode =
+    usePathname().startsWith('/launches/all') && !user?.impersonate;
   const load = useCallback(async () => {
     return await (await fetch('/user/organizations')).json();
   }, []);
@@ -195,6 +197,7 @@ export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
             )}
           >
             {!asOpenSelect &&
+              withAllOrgs &&
               !user?.impersonate &&
               !allMode &&
               data.length > 1 && (

@@ -655,6 +655,15 @@ export const LaunchesComponent: FC<{ readOnly?: boolean }> = ({ readOnly }) => {
       window.close();
     }
   }, []);
+  const redirectToOwnCalendar = !!readOnly && !!user?.impersonate;
+  useEffect(() => {
+    if (redirectToOwnCalendar) {
+      router.replace('/launches');
+    }
+  }, [redirectToOwnCalendar]);
+  if (redirectToOwnCalendar) {
+    return null;
+  }
   if (isLoading || reload) {
     return (
       <div className="bg-newBgColorInner p-[20px] flex flex-1 flex-col gap-[15px] transition-all items-center justify-center">
