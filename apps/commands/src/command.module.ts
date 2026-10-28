@@ -6,9 +6,16 @@ import { ConfigurationTask } from './tasks/configuration';
 import { AgentRun } from './tasks/agent.run';
 import { AccountsTask } from './tasks/accounts';
 import { AgentModule } from '@gitroom/nestjs-libraries/agent/agent.module';
+import { getTemporalModule } from '@gitroom/nestjs-libraries/temporal/temporal.module';
 
 @Module({
-  imports: [ExternalCommandModule, DatabaseModule, AgentModule],
+  // the database services need the Temporal client, the same as the backend
+  imports: [
+    ExternalCommandModule,
+    DatabaseModule,
+    AgentModule,
+    getTemporalModule(false),
+  ],
   controllers: [],
   providers: [RefreshTokens, ConfigurationTask, AgentRun, AccountsTask],
   get exports() {
