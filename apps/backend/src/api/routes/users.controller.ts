@@ -361,17 +361,24 @@ export class UsersController {
   @UseGuards(ThrottlerRealIpGuard)
   @Throttle({ default: { limit: 10, ttl: 3600000 } })
   @Post('/organizations')
-  createOrg(
+  async createOrg(
     @GetUserFromRequest() user: User,
     @Req() req: Request,
-    @Body() body: CreateOrganizationDto
+    @Body() body: CreateOrganizationDto,
+    @Res({ passthrough: true }) response: Response
   ) {
     this.assertNotImpersonating(
       req,
       'Organization cannot be created while impersonating'
     );
 
-    return this._orgService.createOrganization(user.id, body.name);
+    const { id } = await this._orgService.createOrganization(
+      user.id,
+      body.name
+    );
+    this.setOrgCookie(response, id);
+
+    return { id };
   }
 
   @Post('/change-org')
@@ -379,6 +386,12 @@ export class UsersController {
     @Body('id') id: string,
     @Res({ passthrough: true }) response: Response
   ) {
+    this.setOrgCookie(response, id);
+
+    response.status(200).send();
+  }
+
+  private setOrgCookie(response: Response, id: string) {
     response.cookie('showorg', id, {
       domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
       ...(!process.env.NOT_SECURED
@@ -394,8 +407,6 @@ export class UsersController {
     if (process.env.NOT_SECURED) {
       response.header('showorg', id);
     }
-
-    response.status(200).send();
   }
 
   @Get('/delete-account-info')

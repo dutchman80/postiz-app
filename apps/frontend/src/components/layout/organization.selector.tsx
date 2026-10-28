@@ -58,14 +58,7 @@ const CreateOrganization: FC = () => {
       );
       return;
     }
-    const { id } = await response.json();
-    if (!(await switchOrg(fetch, id))) {
-      toast.show(
-        t('error_occurred', 'An error occurred. Please try again.'),
-        'warning'
-      );
-      return;
-    }
+    window.location.reload();
   };
 
   return (
