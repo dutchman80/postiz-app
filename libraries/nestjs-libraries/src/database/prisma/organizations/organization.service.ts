@@ -64,9 +64,13 @@ export class OrganizationService {
     return err;
   }
 
-  async createOrgAndUser(body: NewUserBody, ip: string, userAgent: string) {
+  async createUserWithPersonalOrg(
+    body: NewUserBody,
+    ip: string,
+    userAgent: string
+  ) {
     try {
-      return await this._organizationRepository.createOrgAndUser(
+      return await this._organizationRepository.createUserWithPersonalOrg(
         body,
         await this.getNewUserEmail(body),
         ip,
@@ -94,6 +98,10 @@ export class OrganizationService {
     } catch (err) {
       throw this.mapEmailRace(err);
     }
+  }
+
+  backfillPersonalOrgs() {
+    return this._organizationRepository.backfillPersonalOrgs();
   }
 
   getOrgForInvite(id: string, orgId: string) {
@@ -170,7 +178,18 @@ export class OrganizationService {
     return this._organizationRepository.getOrgByCustomerId(customerId);
   }
 
+  private assertNotPersonal(org: Organization) {
+    if (org.personalUserId) {
+      throw new HttpException(
+        'A personal organization has no team members',
+        400
+      );
+    }
+  }
+
   async inviteTeamMember(org: Organization, user: User, body: AddTeamMemberDto) {
+    this.assertNotPersonal(org);
+
     const timeLimit = dayjs().add(2, 'day').format('YYYY-MM-DD HH:mm:ss');
     const id = makeId(5);
     // only the invite fields, the body can carry undeclared properties
@@ -197,6 +216,8 @@ export class OrganizationService {
   }
 
   async addTeamMemberByEmail(org: Organization, body: AdminAddTeamMemberDto) {
+    this.assertNotPersonal(org);
+
     const tier =
       // @ts-ignore
       org?.subscription?.subscriptionTier ||
@@ -255,6 +276,8 @@ export class OrganizationService {
   }
 
   async deleteTeamMember(org: Organization, userId: string) {
+    this.assertNotPersonal(org);
+
     const userOrgs = await this._organizationRepository.getOrgsByUserId(userId);
     const findOrgToDelete = userOrgs.find((orgUser) => orgUser.id === org.id);
     if (!findOrgToDelete) {

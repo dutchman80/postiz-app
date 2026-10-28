@@ -32,13 +32,6 @@ export class CreateOrgUserDto {
   @ValidateIf((o) => !o.providerToken)
   email: string;
 
-  @IsString()
-  @IsDefined()
-  @MinLength(3)
-  @MaxLength(128)
-  @ValidateIf((o) => !o.invited)
-  company: string;
-
   @IsOptional()
   @IsBoolean()
   invited?: boolean;

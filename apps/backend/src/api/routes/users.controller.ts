@@ -345,6 +345,7 @@ export class UsersController {
         name: p.name,
         users: p.users,
         subscription: p.subscription,
+        isPersonal: !!p.personalUserId,
       }));
   }
 

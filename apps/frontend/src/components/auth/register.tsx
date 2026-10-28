@@ -34,7 +34,6 @@ const WalletProvider = dynamic(
 type Inputs = {
   email: string;
   password: string;
-  company: string;
   invited: boolean;
   providerToken: string;
   provider: string;
@@ -222,21 +221,12 @@ export function RegisterAfter({
                     />
                   </>
                 )}
-                {inviteOrgName ? (
+                {!!inviteOrgName && (
                   <div className="text-[14px] mb-[16px]">
                     {t('you_are_joining', 'You are joining {{name}}', {
                       name: inviteOrgName,
                     })}
                   </div>
-                ) : (
-                  <Input
-                    label="Company"
-                    translationKey="label_company"
-                    {...form.register('company')}
-                    autoComplete="off"
-                    type="text"
-                    placeholder={t('label_company', 'Company')}
-                  />
                 )}
               </div>
               <div className={clsx('text-[12px]')}>

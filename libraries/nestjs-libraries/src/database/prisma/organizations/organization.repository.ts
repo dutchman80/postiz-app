@@ -9,6 +9,7 @@ import {
   SubscriptionTier,
 } from '@prisma/client';
 import { Injectable } from '@nestjs/common';
+import { chunk } from 'lodash';
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { CreateOrgUserDto } from '@gitroom/nestjs-libraries/dtos/auth/create.org.user.dto';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
@@ -31,7 +32,6 @@ export class OrganizationRepository {
     private _organization: PrismaRepository<'organization'>,
     private _userOrg: PrismaRepository<'userOrganization'>,
     private _user: PrismaRepository<'user'>,
-    private _userEmail: PrismaRepository<'userEmail'>,
     private _transaction: PrismaTransaction
   ) {}
 
@@ -39,45 +39,57 @@ export class OrganizationRepository {
     const userEmail = email
       ? email.split('@').join(`+${saasName}@`)
       : `${saasName}+` + makeId(10) + '@postiz.com';
-
-    return this._organization.model.organization.create({
-      select: {
-        id: true,
-        apiKey: true,
-      },
-      data: {
-        name: name ? `${name}###${id}` : `Unnamed User###${id}`,
-        apiKey: AuthService.fixedEncryption(makeSecureId(20)),
-        isTrailing: false,
-        subscription: {
-          create: {
-            totalChannels: 1000000,
-            subscriptionTier: 'ULTIMATE',
-            isLifetime: true,
-            period: 'YEARLY',
-          },
+    const userName = name ? `${name}###${id}` : `Unnamed User###${id}`;
+    const data: Prisma.OrganizationCreateInput = {
+      name: userName,
+      apiKey: AuthService.fixedEncryption(makeSecureId(20)),
+      isTrailing: false,
+      subscription: {
+        create: {
+          totalChannels: 1000000,
+          subscriptionTier: 'ULTIMATE',
+          isLifetime: true,
+          period: 'YEARLY',
         },
-        users: {
-          create: {
-            role: Role.SUPERADMIN,
-            user: {
-              create: {
-                activated: true,
-                email: userEmail,
-                name: name ? `${name}###${id}` : `Unnamed User###${id}`,
-                providerName: 'LOCAL',
-                password: AuthService.hashPassword(makeSecureId(500)),
-                timezone: 0,
-                emails: {
-                  create: {
-                    email: userEmail.toLowerCase(),
-                  },
+      },
+      users: {
+        create: {
+          role: Role.SUPERADMIN,
+          user: {
+            create: {
+              activated: true,
+              email: userEmail,
+              name: userName,
+              providerName: 'LOCAL',
+              password: AuthService.hashPassword(makeSecureId(500)),
+              timezone: 0,
+              emails: {
+                create: {
+                  email: userEmail.toLowerCase(),
                 },
               },
             },
           },
         },
       },
+    };
+
+    return this._transaction.model.$transaction(async (tx) => {
+      const organization = await tx.organization.create({
+        select: {
+          id: true,
+          apiKey: true,
+          users: {
+            select: {
+              userId: true,
+            },
+          },
+        },
+        data,
+      });
+      await this.createPersonalOrg(tx, organization.users[0].userId);
+
+      return { id: organization.id, apiKey: organization.apiKey };
     });
   }
 
@@ -276,6 +288,9 @@ export class OrganizationRepository {
 
   async getOrgsByUserId(userId: string) {
     return this._organization.model.organization.findMany({
+      orderBy: {
+        createdAt: 'asc',
+      },
       where: {
         deletedAt: null,
         users: {
@@ -454,12 +469,14 @@ export class OrganizationRepository {
       select: {
         id: true,
         name: true,
+        personalUserId: true,
         subscription: true,
       },
     });
 
     if (
       !organization ||
+      organization.personalUserId ||
       (process.env.STRIPE_PUBLISHABLE_KEY &&
         organization.subscription?.subscriptionTier ===
           SubscriptionTier.STANDARD)
@@ -553,57 +570,106 @@ export class OrganizationRepository {
   // releaseId is the pending row of the address, deleted together with the
   // create so a failed registration never frees the address. A row verified in
   // the meantime is not deleted, which fails the whole transaction.
-  private async withRelease<T>(
+  private withRelease<T>(
     releaseId: string | undefined,
-    create: Prisma.PrismaPromise<T>
+    create: (tx: Prisma.TransactionClient) => Promise<T>
   ): Promise<T> {
-    if (!releaseId) {
-      return create;
-    }
+    return this._transaction.model.$transaction(async (tx) => {
+      if (releaseId) {
+        await tx.userEmail.delete({
+          where: { id: releaseId, verifiedAt: null },
+          select: { id: true },
+        });
+      }
 
-    const [, created] = await this._transaction.model.$transaction([
-      this._userEmail.model.userEmail.delete({
-        where: { id: releaseId, verifiedAt: null },
-        select: { id: true },
-      }),
-      create,
-    ]);
-
-    return created;
+      return create(tx);
+    });
   }
 
-  async createOrgAndUser(
-    body: NewUserBody,
-    newUserEmail: NewUserEmail,
-    ip: string,
-    userAgent: string
+  // every user owns exactly one Personal organization, personalUserId is unique
+  private personalOrgData(userId: string) {
+    return {
+      name: 'Personal',
+      apiKey: AuthService.fixedEncryption(makeSecureId(20)),
+      allowTrial: true,
+      isTrailing: true,
+      personalUserId: userId,
+    };
+  }
+
+  private createPersonalOrg(
+    tx: Pick<Prisma.TransactionClient, 'organization'>,
+    userId: string
   ) {
-    const create = this._organization.model.organization.create({
+    return tx.organization.create({
       data: {
-        name: body.company,
-        apiKey: AuthService.fixedEncryption(makeSecureId(20)),
-        allowTrial: true,
-        isTrailing: true,
+        ...this.personalOrgData(userId),
         users: {
           create: {
             role: Role.SUPERADMIN,
-            user: {
-              create: this.newUserData(body, newUserEmail, ip, userAgent),
-            },
+            userId,
           },
         },
       },
       select: {
         id: true,
-        users: {
-          select: {
-            user: true,
-          },
-        },
       },
     });
+  }
 
-    return this.withRelease(newUserEmail.releaseId, create);
+  createUserWithPersonalOrg(
+    body: NewUserBody,
+    newUserEmail: NewUserEmail,
+    ip: string,
+    userAgent: string
+  ) {
+    const data = this.newUserData(body, newUserEmail, ip, userAgent);
+
+    return this.withRelease(newUserEmail.releaseId, async (tx) => {
+      const user = await tx.user.create({
+        data,
+      });
+      const organization = await this.createPersonalOrg(tx, user.id);
+
+      return { organizationId: organization.id, user };
+    });
+  }
+
+  async backfillPersonalOrgs() {
+    const users = await this._user.model.user.findMany({
+      where: {
+        deletedAt: null,
+        personalOrganization: null,
+      },
+      select: {
+        id: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+
+    let created = 0;
+    for (const part of chunk(users, 500)) {
+      // the organization never exists without its owner membership
+      created += await this._transaction.model.$transaction(async (tx) => {
+        const orgs = await tx.organization.createManyAndReturn({
+          data: part.map((user) => this.personalOrgData(user.id)),
+          skipDuplicates: true,
+          select: { id: true, personalUserId: true },
+        });
+        await tx.userOrganization.createMany({
+          data: orgs.map((org) => ({
+            organizationId: org.id,
+            userId: org.personalUserId!,
+            role: Role.SUPERADMIN,
+          })),
+          skipDuplicates: true,
+        });
+
+        return orgs.length;
+      });
+    }
+
+    return created;
   }
 
   async createUserInOrg(
@@ -613,28 +679,33 @@ export class OrganizationRepository {
     ip: string,
     userAgent: string
   ) {
-    const create = this._userOrg.model.userOrganization.create({
-      data: {
-        role: invite.role,
-        organization: {
-          connect: {
-            id: invite.orgId,
-          },
-        },
-        user: {
-          create: {
-            ...this.newUserData(body, newUserEmail, ip, userAgent),
-            inviteId: invite.id,
-          },
-        },
-      },
-      select: {
-        organizationId: true,
-        user: true,
-      },
-    });
+    const data = this.newUserData(body, newUserEmail, ip, userAgent);
 
-    return this.withRelease(newUserEmail.releaseId, create);
+    return this.withRelease(newUserEmail.releaseId, async (tx) => {
+      const created = await tx.userOrganization.create({
+        data: {
+          role: invite.role,
+          organization: {
+            connect: {
+              id: invite.orgId,
+            },
+          },
+          user: {
+            create: {
+              ...data,
+              inviteId: invite.id,
+            },
+          },
+        },
+        select: {
+          organizationId: true,
+          user: true,
+        },
+      });
+      await this.createPersonalOrg(tx, created.user.id);
+
+      return created;
+    });
   }
 
   getOrgByCustomerId(customerId: string) {

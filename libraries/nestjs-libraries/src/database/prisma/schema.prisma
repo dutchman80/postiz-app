@@ -43,6 +43,8 @@ model Organization {
   usedCodes           UsedCodes[]
   users               UserOrganization[]
   webhooks            Webhooks[]
+  personalUserId      String?              @unique
+  personalUser        User?                @relation("PersonalOrganization", fields: [personalUserId], references: [id])
   oauthApp            OAuthApp[]
   oauthAuthorizations OAuthAuthorization[]
 
@@ -114,6 +116,7 @@ model User {
   agencies              SocialMediaAgency?
   picture               Media?               @relation(fields: [pictureId], references: [id])
   organizations         UserOrganization[]
+  personalOrganization  Organization?        @relation("PersonalOrganization")
   sendSuccessEmails     Boolean              @default(true)
   sendFailureEmails     Boolean              @default(true)
   sendStreakEmails      Boolean              @default(true)

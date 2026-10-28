@@ -19,6 +19,7 @@ export class UsersRepository {
     private _userEmail: PrismaRepository<'userEmail'>,
     private _userIdentity: PrismaRepository<'userIdentity'>,
     private _userOrg: PrismaRepository<'userOrganization'>,
+    private _organization: PrismaRepository<'organization'>,
     private _transaction: PrismaTransaction
   ) {}
 
@@ -584,7 +585,20 @@ export class UsersRepository {
       [Role.SUPERADMIN]: 2,
     };
     let targetHasPassword = !!target.password;
+    // the first source Personal org goes to a target that has none, every other
+    // one is converted so the target keeps a single one. With none on either
+    // side nothing happens here, the next boot backfill creates it
+    let targetHasPersonal =
+      !!(await this._organization.model.organization.findFirst({
+        where: { personalUserId: targetId },
+        select: { id: true },
+      }));
     for (const source of sources) {
+      const sourceHasPersonal =
+        !!(await this._organization.model.organization.findFirst({
+          where: { personalUserId: source.id },
+          select: { id: true },
+        }));
       const [targetOrgs, sourceOrgs] = await Promise.all([
         this._userOrg.model.userOrganization.findMany({
           where: { userId: targetId },
@@ -665,11 +679,20 @@ export class UsersRepository {
           data: { userId: targetId },
         }),
         ...memberships,
+        // the Personal org moves with its membership, to become the target's
+        // own or, when it has one already, a regular org
+        this._organization.model.organization.updateMany({
+          where: { personalUserId: source.id },
+          data: targetHasPersonal
+            ? { personalUserId: null, name: `Personal (${source.email})` }
+            : { personalUserId: targetId },
+        }),
         this._user.model.user.update({
           where: { id: source.id },
           data: this.deletedUserData(source),
         }),
       ]);
+      targetHasPersonal ||= sourceHasPersonal;
     }
 
     return sources.map((source) => ({ id: source.id, email: source.email }));
