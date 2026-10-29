@@ -629,36 +629,6 @@ export class IntegrationRepository {
     });
   }
 
-  getIntegrationsForOrganizations(orgIds: string[]) {
-    return this._integration.model.integration.findMany({
-      where: {
-        organizationId: { in: orgIds },
-        deletedAt: null,
-      },
-      orderBy: [{ organizationId: 'asc' }, { createdAt: 'asc' }],
-      select: {
-        id: true,
-        name: true,
-        customName: true,
-        picture: true,
-        providerIdentifier: true,
-        type: true,
-        disabled: true,
-        inBetweenSteps: true,
-        refreshNeeded: true,
-        profile: true,
-        postingTimes: true,
-        organization: {
-          select: {
-            id: true,
-            name: true,
-            personalUserId: true,
-          },
-        },
-      },
-    });
-  }
-
   private async latestPostsFor(
     org: string,
     state: 'PUBLISHED' | 'ERROR',

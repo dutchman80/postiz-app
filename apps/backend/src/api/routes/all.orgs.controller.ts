@@ -1,11 +1,14 @@
 import { Controller, Get, HttpException, Query } from '@nestjs/common';
 import { HttpForbiddenException } from '@gitroom/nestjs-libraries/services/exception.filter';
+import { Organization } from '@prisma/client';
 import { ApiTags } from '@nestjs/swagger';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
-import { GetOrgIdsFromRequest } from '@gitroom/nestjs-libraries/user/org.from.request';
+import {
+  GetOrgFromRequest,
+  GetOrgIdsFromRequest,
+} from '@gitroom/nestjs-libraries/user/org.from.request';
 import { PostsService } from '@gitroom/nestjs-libraries/database/prisma/posts/posts.service';
-import { IntegrationService } from '@gitroom/nestjs-libraries/database/prisma/integrations/integration.service';
 import { GetPostsDto } from '@gitroom/nestjs-libraries/dtos/posts/get.posts.dto';
 
 dayjs.extend(utc);
@@ -13,18 +16,7 @@ dayjs.extend(utc);
 @ApiTags('User')
 @Controller('/user/all')
 export class AllOrgsController {
-  constructor(
-    private _postsService: PostsService,
-    private _integrationService: IntegrationService
-  ) {}
-
-  private parsePostingTimes(postingTimes: string) {
-    try {
-      return JSON.parse(postingTimes);
-    } catch {
-      return [];
-    }
-  }
+  constructor(private _postsService: PostsService) {}
 
   private assertOrgScope(orgIds: string[]) {
     // Prisma treats `{ in: undefined }` as no filter, so fail closed.
@@ -46,6 +38,7 @@ export class AllOrgsController {
 
   @Get('/posts')
   async getPosts(
+    @GetOrgFromRequest() org: Organization,
     @GetOrgIdsFromRequest() orgIds: string[],
     @Query() query: GetPostsDto
   ) {
@@ -69,33 +62,14 @@ export class AllOrgsController {
     ) {
       throw new HttpException('Invalid date range', 400);
     }
-    return this._postsService.getPostsForOrganizationsMinified(orgIds, query);
-  }
-
-  @Get('/integrations')
-  async getIntegrations(@GetOrgIdsFromRequest() orgIds: string[]) {
-    this.assertOrgScope(orgIds);
-    return {
-      integrations: (
-        await this._integrationService.getIntegrationsForOrganizations(orgIds)
-      ).map((p) => ({
-        id: p.id,
-        name: p.customName || p.name,
-        originalName: p.name,
-        picture: p.picture || '/no-picture.jpg',
-        identifier: p.providerIdentifier,
-        type: p.type,
-        disabled: p.disabled,
-        inBetweenSteps: p.inBetweenSteps,
-        refreshNeeded: p.refreshNeeded,
-        display: p.profile,
-        time: this.parsePostingTimes(p.postingTimes),
-        organization: {
-          id: p.organization.id,
-          name: p.organization.name,
-          isPersonal: !!p.organization.personalUserId,
-        },
-      })),
-    };
+    // the current organization is already on the calendar, this is the overlay
+    const otherOrgIds = orgIds.filter((id) => id !== org.id);
+    if (otherOrgIds.length === 0) {
+      return { posts: [] };
+    }
+    return this._postsService.getPostsForOrganizationsMinified(
+      otherOrgIds,
+      query
+    );
   }
 }

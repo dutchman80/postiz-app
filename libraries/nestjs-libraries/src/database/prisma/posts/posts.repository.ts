@@ -158,12 +158,13 @@ export class PostsRepository {
   }
 
   getPostsForOrganizations(orgIds: string[], query: GetPostsDto) {
-    return this.findCalendarPosts({ in: orgIds }, query);
+    return this.findCalendarPosts({ in: orgIds }, query, true);
   }
 
   private async findCalendarPosts(
     organizationId: string | Prisma.StringFilter,
-    query: GetPostsDto
+    query: GetPostsDto,
+    withOrganization = false
   ) {
     // Use the provided start and end dates directly
     const startDate = dayjs.utc(query.startDate).toDate();
@@ -233,6 +234,13 @@ export class PostsRepository {
             picture: true,
           },
         },
+        ...(withOrganization
+          ? {
+              organization: {
+                select: { id: true, name: true, personalUserId: true },
+              },
+            }
+          : {}),
       },
     });
 

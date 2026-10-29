@@ -154,10 +154,6 @@ export class IntegrationService {
     return this._integrationRepository.getIntegrationsList(org);
   }
 
-  getIntegrationsForOrganizations(orgIds: string[]) {
-    return this._integrationRepository.getIntegrationsForOrganizations(orgIds);
-  }
-
   getChannelHealth(org: string, includeDeleted = false) {
     return this._integrationRepository.getChannelHealth(org, includeDeleted);
   }

@@ -197,7 +197,7 @@ export const FirstBillingComponent = () => {
         </div>
         <div className="flex items-center">
           <div className="flex gap-[20px] text-textItemBlur">
-            <OrganizationSelector withAllOrgs={false} />
+            <OrganizationSelector />
             <InvoicesComponent />
             <div className="hover:text-newTextColor">
               <ModeComponent />
