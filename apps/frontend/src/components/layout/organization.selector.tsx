@@ -13,7 +13,12 @@ import { Button } from '@gitroom/react/form/button';
 import { Input } from '@gitroom/react/form/input';
 import { CreateOrganizationDto } from '@gitroom/nestjs-libraries/dtos/settings/create.organization.dto';
 import clsx from 'clsx';
-import { usePathname, useRouter } from 'next/navigation';
+
+export interface PostOrganization {
+  id: string;
+  name: string;
+  isPersonal: boolean;
+}
 
 export const orgDisplayName = (
   org: { name: string; isPersonal?: boolean },
@@ -92,37 +97,37 @@ const CreateOrganization: FC = () => {
     </FormProvider>
   );
 };
-export const OrganizationSelector: FC<{
-  asOpenSelect?: boolean;
-  withAllOrgs?: boolean;
-}> = ({ asOpenSelect, withAllOrgs = true }) => {
+export const useOrganizations = () => {
   const fetch = useFetch();
-  const user = useUser();
-  const t = useT();
-  const modals = useModals();
-  const router = useRouter();
-  const pathname = usePathname();
-  const allMode =
-    withAllOrgs && pathname.startsWith('/launches/all') && !user?.impersonate;
   const load = useCallback(async () => {
     return await (await fetch('/user/organizations')).json();
   }, []);
-  const { isLoading, data } = useSWR('organizations', load, {
+  return useSWR('organizations', load, {
     revalidateIfStale: false,
     revalidateOnFocus: false,
     refreshWhenOffline: false,
     refreshWhenHidden: false,
     revalidateOnReconnect: false,
   });
+};
+
+export const OrganizationSelector: FC<{ asOpenSelect?: boolean }> = ({
+  asOpenSelect,
+}) => {
+  const fetch = useFetch();
+  const user = useUser();
+  const t = useT();
+  const modals = useModals();
+  const { isLoading, data } = useOrganizations();
   const current = useMemo(() => {
     return data?.find((d: any) => d.id === user?.orgId);
   }, [data]);
   const withoutCurrent = useMemo(() => {
     // Array.sort is stable, so the other organizations keep the received order
     return data
-      ?.filter((d: any) => allMode || d.id !== user?.orgId)
+      ?.filter((d: any) => d.id !== user?.orgId)
       .sort((a: any, b: any) => Number(b.isPersonal) - Number(a.isPersonal));
-  }, [current, data, allMode]);
+  }, [current, data]);
   const createOrg = useCallback(() => {
     modals.openModal({
       classNames: {
@@ -141,13 +146,9 @@ export const OrganizationSelector: FC<{
           id: org.id,
         }),
       });
-      if (allMode) {
-        window.location.href = '/launches';
-        return;
-      }
       window.location.reload();
     },
-    [allMode]
+    []
   );
   if (isLoading || !data?.length) {
     return null;
@@ -180,11 +181,9 @@ export const OrganizationSelector: FC<{
                   fill="currentColor"
                 />
               </svg>
-              {(allMode || !!current?.name) && (
+              {!!current?.name && (
                 <div className="max-w-[240px] truncate mobile:hidden">
-                  {allMode
-                    ? t('all_organizations', 'All Orgs')
-                    : orgDisplayName(current, t)}
+                  {orgDisplayName(current, t)}
                 </div>
               )}
             </div>
@@ -197,18 +196,6 @@ export const OrganizationSelector: FC<{
                 : ''
             )}
           >
-            {!asOpenSelect &&
-              withAllOrgs &&
-              !user?.impersonate &&
-              !allMode &&
-              data.length > 1 && (
-                <div
-                  onClick={() => router.push('/launches/all')}
-                  className="whitespace-nowrap truncate"
-                >
-                  {t('all_organizations', 'All Orgs')}
-                </div>
-              )}
             {withoutCurrent?.map(
               (org: {
                 name: string;

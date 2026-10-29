@@ -498,8 +498,19 @@ export class PostsService {
   }
 
   async getPostsForOrganizationsMinified(orgIds: string[], query: GetPostsDto) {
+    const posts = await this._postRepository.getPostsForOrganizations(
+      orgIds,
+      query
+    );
     return minifyPosts({
-      posts: await this._postRepository.getPostsForOrganizations(orgIds, query),
+      posts: posts.map(({ organization, ...post }) => ({
+        ...post,
+        organization: {
+          id: organization.id,
+          name: organization.name,
+          isPersonal: !!organization.personalUserId,
+        },
+      })),
     });
   }
 
