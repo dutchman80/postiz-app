@@ -61,8 +61,11 @@ import {
   newDayjs,
 } from '@gitroom/frontend/components/layout/set.timezone';
 import { Button } from '@gitroom/react/form/button';
-import { orgDisplayName } from '@gitroom/frontend/components/layout/organization.selector';
 import { ChevronUpIcon } from '@gitroom/frontend/components/ui/icons';
+import {
+  orgDisplayName,
+  PostOrganization,
+} from '@gitroom/frontend/components/layout/organization.selector';
 
 // Extend dayjs with necessary plugins
 extend(isSameOrAfter);
@@ -1218,11 +1221,7 @@ const CalendarItem: FC<{
     tags: {
       tag: Tags;
     }[];
-    organization?: {
-      id: string;
-      name: string;
-      isPersonal: boolean;
-    };
+    organization?: PostOrganization;
   };
 }> = memo((props) => {
   const t = useT();

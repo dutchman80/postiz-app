@@ -14,6 +14,12 @@ import { Input } from '@gitroom/react/form/input';
 import { CreateOrganizationDto } from '@gitroom/nestjs-libraries/dtos/settings/create.organization.dto';
 import clsx from 'clsx';
 
+export interface PostOrganization {
+  id: string;
+  name: string;
+  isPersonal: boolean;
+}
+
 export const orgDisplayName = (
   org: { name: string; isPersonal?: boolean },
   t: ReturnType<typeof useT>

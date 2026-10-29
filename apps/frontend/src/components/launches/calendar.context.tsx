@@ -25,6 +25,11 @@ import {
   newDayjs,
 } from '@gitroom/frontend/components/layout/set.timezone';
 import { timer } from '@gitroom/helpers/utils/timer';
+import { useUser } from '@gitroom/frontend/components/layout/user.context';
+import {
+  PostOrganization,
+  useOrganizations,
+} from '@gitroom/frontend/components/layout/organization.selector';
 import { expandPostsList, expandPosts } from '@gitroom/helpers/utils/posts.list.minify';
 extend(isoWeek);
 extend(weekOfYear);
@@ -53,13 +58,10 @@ export const CalendarContext = createContext({
         tag: Tags;
       }[];
       // only on the posts of other organizations, which are read-only
-      organization?: {
-        id: string;
-        name: string;
-        isPersonal: boolean;
-      };
+      organization?: PostOrganization;
     }
   >,
+  canViewAllOrgs: false,
   viewAllOrgs: false,
   setViewAllOrgs: (viewAllOrgs: boolean) => {
     /** empty **/
@@ -263,7 +265,14 @@ export const CalendarWeekProvider: FC<{
   }, [filters, params]);
 
   // The other organizations' posts, they only exist on the calendar views
-  const viewAllOrgs = viewAllOrgsSaved === '1' && filters.display !== 'list';
+  // only with other organizations to show, and not while impersonating
+  const user = useUser();
+  const { data: organizations } = useOrganizations();
+  const canViewAllOrgs =
+    filters.display !== 'list' &&
+    !user?.impersonate &&
+    organizations?.length > 1;
+  const viewAllOrgs = viewAllOrgsSaved === '1' && canViewAllOrgs;
   const loadOtherOrgsData = useCallback(async () => {
     const modifiedParams = new URLSearchParams({
       display: filters.display,
@@ -466,6 +475,7 @@ export const CalendarWeekProvider: FC<{
         reloadCalendarView,
         ...filters,
         posts: calendarIsLoading ? [] : allPosts,
+        canViewAllOrgs,
         viewAllOrgs,
         setViewAllOrgs,
         postDates,
