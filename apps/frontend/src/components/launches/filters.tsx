@@ -46,17 +46,19 @@ function getDateRange(
   }
 }
 
+const useCanViewAllOrgs = () => {
+  const { display } = useCalendar();
+  const user = useUser();
+  const { data: organizations } = useOrganizations();
+  return display !== 'list' && !user?.impersonate && organizations?.length > 1;
+};
+
 // shows the other organizations' posts on the calendar, read-only
 const ViewAllOrgs: FC = () => {
   const calendar = useCalendar();
-  const user = useUser();
   const t = useT();
-  const { data: organizations } = useOrganizations();
-  if (
-    calendar.display === 'list' ||
-    user?.impersonate ||
-    !(organizations?.length > 1)
-  ) {
+  const canViewAllOrgs = useCanViewAllOrgs();
+  if (!canViewAllOrgs) {
     return null;
   }
   return (
@@ -72,6 +74,7 @@ const ViewAllOrgs: FC = () => {
 export const Filters = () => {
   const calendar = useCalendar();
   const t = useT();
+  const canViewAllOrgs = useCanViewAllOrgs();
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Set dayjs locale based on current language
@@ -475,7 +478,7 @@ export const Filters = () => {
         />
         <SelectChannels />
       </div>
-      {calendar.integrations.length > 1 && (
+      {(calendar.integrations.length > 1 || canViewAllOrgs) && (
         <div
           onClick={() => setFiltersOpen(true)}
           className={clsx(
