@@ -1251,6 +1251,13 @@ const CalendarItem: FC<{
   const organization = post.organization;
   const readOnly = !!organization;
   const orgName = organization && orgDisplayName(organization, t);
+  const toaster = useToaster();
+  // phones show only the avatar and have no hover tooltip, so a tap names the organization
+  const showOrganization = useCallback(() => {
+    if (window.matchMedia('(max-width: 1025px)').matches) {
+      toaster.show(`${t('read_only', 'Read-only')} · ${orgName}`, 'success');
+    }
+  }, [toaster, t, orgName]);
   const preview = useCallback(() => {
     window.open(`/p/` + post.id + '?share=true', '_blank');
   }, [post]);
@@ -1421,7 +1428,7 @@ const CalendarItem: FC<{
         )}
       </div>
       <div
-        onClick={readOnly ? undefined : editPost}
+        onClick={readOnly ? showOrganization : editPost}
         {...(orgName
           ? { 'data-tooltip-id': 'tooltip', 'data-tooltip-content': orgName }
           : {})}
@@ -1430,6 +1437,9 @@ const CalendarItem: FC<{
           'relative',
           display === 'month' &&
             'mobile:p-[4px] mobile:rounded-[10px] mobile:justify-center',
+          readOnly &&
+            display === 'month' &&
+            'mobile:opacity-60 mobile:border mobile:border-dashed mobile:border-tableBorder',
           isBeforeNow && '!grayscale'
         )}
       >

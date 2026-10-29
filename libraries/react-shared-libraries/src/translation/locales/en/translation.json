@@ -912,6 +912,7 @@
   "youtube_thumbnail_overrides_media": "This post has a YouTube-specific thumbnail, which overrides the thumbnail set in the media settings.",
   "personal_organization": "Personal",
   "view_all_organizations": "View All Orgs",
+  "read_only": "Read-only",
   "create_organization": "Create organization",
   "organization_name": "Organization name",
   "enter_organization_name": "Enter organization name",
