@@ -837,6 +837,17 @@ export const CalendarColumn: FC<{
 
       // Find the post to check its state
       const post = posts.find((p) => p.id === item.id);
+
+      // month cells have no hour of their own (they are end-of-day), so the
+      // post keeps the time it already had on the new day
+      const targetDate =
+        randomHour && post
+          ? getDate
+              .startOf('day')
+              .hour(postDates.get(post).hour())
+              .minute(postDates.get(post).minute())
+          : getDate;
+      if (randomHour && targetDate.isBefore(newDayjs())) return;
       let action: 'schedule' | 'update' = 'schedule';
 
       // Check if post is already published or queued in the past
@@ -857,7 +868,7 @@ export const CalendarColumn: FC<{
                       'This post was already published. Republishing will publish it again to'
                     )}{' '}
                     {post.integration?.name}{' '}
-                    {t('republish_at', 'at')} {getDate.format('DD/MM/YYYY HH:mm')}.
+                    {t('republish_at', 'at')} {targetDate.format('DD/MM/YYYY HH:mm')}.
                     {(!!item.interval || !!post.intervalInDays) && (
                       <div className="mt-[10px]">
                         {t(
@@ -907,12 +918,12 @@ export const CalendarColumn: FC<{
       }
 
       if (!item.interval) {
-        changeDate(item.id, getDate);
+        changeDate(item.id, targetDate);
       }
       const { status } = await fetch(`/posts/${item.id}/date`, {
         method: 'PUT',
         body: JSON.stringify({
-          date: getDate.utc().format('YYYY-MM-DDTHH:mm:ss'),
+          date: targetDate.utc().format('YYYY-MM-DDTHH:mm:ss'),
           action,
           // published posts always confirm via the modal before reaching here;
           // for QUEUE posts the flag is a no-op on the server
@@ -930,7 +941,7 @@ export const CalendarColumn: FC<{
     collect: (monitor) => ({
       canDrop: isBeforeNow ? false : !!monitor.canDrop() && !!monitor.isOver(),
     }),
-  }), [posts, isBeforeNow]);
+  }), [posts, postDates, isBeforeNow, randomHour]);
 
   const addModal = useCallback(async () => {
     const set: any = !sets.length
